@@ -192,12 +192,6 @@ async def startup():
     polling_thread = threading.Thread(target=start_telegram_polling, daemon=True)
     polling_thread.start()
 
-# 保留NoneBot原生echo命令（备用）
-echo = on_command("echo", block=True)
-@echo.handle()
-async def handle_echo_nonebot(args: Message = CommandArg()):
-    content = args.extract_plain_text()
-    await echo.finish(content)
 
 
 
