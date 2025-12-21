@@ -22,26 +22,19 @@ def load_secrets():
         return json.load(f)
 
 def load_personality_setting():
-    # 1. 拼接JSON文件路径（兼容不同操作系统）
     config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config")
     json_path = os.path.join(config_dir, "Personality_Setting.json")
-    
-    # 2. 检查文件是否存在
     if not os.path.exists(json_path):
         raise FileNotFoundError(f"个性设置文件不存在：{json_path}，请检查路径是否正确")
-    
-    # 3. 读取并解析JSON
     try:
         with open(json_path, "r", encoding="utf-8") as f:
             setting = json.load(f)
-        # 4. 提取系统提示词（兜底：如果键不存在，返回默认值）
         system_prompt = setting.get("system_prompt", "")
         if not system_prompt:
             raise ValueError("JSON文件中未找到system_prompt字段，或字段值为空")
         return system_prompt
     except json.JSONDecodeError as e:
         raise ValueError(f"JSON文件格式错误：{str(e)}，请检查语法是否正确")
-
 
 secrets = load_secrets()
 TELEGRAM_TOKEN = secrets["TELEGRAM_TOKEN"]
