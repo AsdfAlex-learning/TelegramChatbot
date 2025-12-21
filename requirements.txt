@@ -1,0 +1,5 @@
+nonebot
+nonebot-adapter-telegram
+nonebot-plugin-deepseek
+pyTelegramBotAPI>=4.9.0
+requests>=2.28.0
