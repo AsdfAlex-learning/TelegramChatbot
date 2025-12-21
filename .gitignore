@@ -6,7 +6,6 @@ config/Personality_Setting.json
 config/PROTECTED_INFO.json
 
 # 忽略NoneBot的环境配置文件
-.env.prod
 .env
 .env.dev
 
