@@ -1,0 +1,27 @@
+# 忽略虚拟环境（.venv）
+.venv/
+
+# 忽略敏感配置文件（config目录下的JSON）
+config/Personality_Setting.json
+config/PROTECTED_INFO.json
+
+# 忽略NoneBot的环境配置文件
+.env.prod
+.env
+.env.dev
+
+# 忽略Python编译文件
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 忽略IDE/编辑器临时文件（可选）
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 忽略日志/缓存文件（如果有）
+*.log
+*.cache
