@@ -80,7 +80,7 @@ def call_deepseek_api(user_id: int, prompt: str) -> str:
         response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data, timeout=30)
         response.raise_for_status()  # 抛出HTTP错误
         result = response.json()
-        return result["choices"][0]["message"]["content"].strip()
+        assistant_reply = result["choices"][0]["message"]["content"].strip()
 
         with context_lock:
             chat_context[user_id].append({"role": "assistant", "content": assistant_reply})

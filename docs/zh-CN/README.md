@@ -89,6 +89,8 @@
 
 是的，这样就可以获得有真人感的回复了
 
+## 当然，由于AI生成的回答通常是比较长的，所以一般都会生成提示词中句数的上限，也就是经常会回复四条。虽然真人会
+
 # 虽然是秒回，但是这回的也太快了吧
 
 调用接口，获得回复的消息，这不需要多久，所以哪怕我使用了上述的碎片化回复，但是机器人回复我的速度也飞快
@@ -126,4 +128,27 @@
 
 我不希望我发的消息跟没发过是一样的，我希望你能记住我们之间的一些小事 这样显得AI是在乎我的
 
-是的，所以我需要一个简单的关于上下文对话的
+是的，所以我需要一个简单的关于上下文对话的部分
+
+这里我就直接使用了AI推荐的内容：
+
+```python
+        with context_lock:
+        if user_id not in chat_context:
+            # 首次对话：先添加系统提示词
+            chat_context[user_id] = [{"role": "system", "content": SYSTEM_PROMPT.strip()}]
+        # 添加当前用户输入
+        chat_context[user_id].append({"role": "user", "content": prompt})
+        
+        # 可选：限制上下文长度（避免token超限），保留最近10轮对话
+        if len(chat_context[user_id]) > 21:  # 1条系统提示 + 10轮问答（20条）
+            chat_context[user_id] = [chat_context[user_id][0]] + chat_context[user_id][-20:]
+
+
+    data = {
+        "model": "deepseek-chat",  # DeepSeek默认模型
+        "messages": chat_context[user_id],
+        "temperature": 0.7,  # 回复随机性，0-1之间
+        "max_tokens": 2048   # 最大回复长度
+    }
+```
