@@ -56,7 +56,7 @@ user_timers = {}
 buffer_lock = threading.Lock()
 # 消息收集时间范围（秒）
 COLLECT_MIN_TIME = 15
-COLLECT_MAX_TIME = 30
+COLLECT_MAX_TIME = 20
 
 # 初始化Telegram机器人
 tb_bot = telebot.TeleBot(TELEGRAM_TOKEN)
@@ -166,7 +166,7 @@ def add_user_message(user_id, message_text):
         print(f"[Telegram] 用户{user_id}新增消息：{message_text} | 当前缓冲数：{len(user_message_buffer[user_id])}")
         
         # 4. 管理计时器：如果已有计时器则重置，没有则创建
-        # 随机生成收集时间（15-30秒）
+        # 随机生成收集时间（15-20秒）
         collect_time = random.uniform(COLLECT_MIN_TIME, COLLECT_MAX_TIME)
         
         if user_id in user_timers:
