@@ -258,3 +258,49 @@ AI指出我的问题所在：
 （因为我已经喜欢他了，他已经很成功了）
 
 圣诞快乐，不止圣诞每天都要快乐哦，阅读README的各位~
+
+# 又是忘记写的一个小功能：我希望我也能进行碎片化的连续对话
+
+前面实现了AI的碎片化连续回复，但还是忽略了，用户也是人类
+
+```plaintext
+    人类有时候发送消息不会直接一长段，会碎片化的发送较短的消息，并且忽略一些标点符号
+```
+
+是的，虽然真的很荒谬，但是我确实忘记做了人类也会有碎片化的回复消息。具体怎么实现碎片化AI回复可以看前文
+
+要实现碎片化的回复还是很简单的，我只需要增加足够的延迟给用户（我自己）作为打字的延迟
+
+然后用户每发一条消息，就重置计时，当计时截至之后，一次性把用户的所有消息通过API发送给AI服务提供商
+
+这是很简单的实现方法，说实话真的很简单，理解难度低，实现起来的难度也不大
+
+这是实现方式
+
+```python
+    def add_user_message(user_id, message_text):
+    """添加用户消息到缓冲区，并管理计时器"""
+    with buffer_lock:
+        if user_id not in user_message_buffer:
+            user_message_buffer[user_id] = []
+        
+        user_message_buffer[user_id].append(message_text)
+        print(f"[Telegram] 用户{user_id}新增消息：{message_text} | 当前缓冲数：{len(user_message_buffer[user_id])}")
+        
+        collect_time = random.uniform(COLLECT_MIN_TIME, COLLECT_MAX_TIME)
+        
+        if user_id in user_timers:
+            existing_timer = user_timers[user_id]
+            existing_timer.cancel()
+        
+        timer = threading.Timer(collect_time, process_user_messages, args=[user_id])
+        timer.daemon = True
+        timer.start()
+        
+        user_timers[user_id] = timer
+        print(f"[Telegram] 用户{user_id}启动/重置计时器，将在{collect_time:.1f}秒后处理消息")
+```
+
+这些代码里面的print都是方便调试用的，最终的成品呢，说实话可以带上这部分的print
+
+因为最终可以输出到日志里面，非常方便debug（如果出了bug的话）
