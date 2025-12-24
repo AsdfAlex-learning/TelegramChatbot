@@ -24,3 +24,6 @@ __pycache__/
 # 忽略日志/缓存文件（如果有）
 *.log
 *.cache
+
+# 忽略 user_memories 文件夹及其所有内容
+user_memories/

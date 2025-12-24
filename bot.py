@@ -7,6 +7,9 @@ import time
 import random
 import json
 import sys
+import sqlite3
+import csv
+from datetime import datetime, timedelta
 from nonebot import on_command
 from nonebot.adapters import Message
 from nonebot.params import CommandArg
@@ -15,6 +18,10 @@ from nonebot import get_driver
 
 nonebot.init(env_file=".env.prod")
 driver = get_driver()
+
+# 确保用户记忆存储目录存在
+USER_MEMORIES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "user_memories")
+os.makedirs(USER_MEMORIES_DIR, exist_ok=True)
 
 def load_secrets():
     secrets_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config", "PROTECTED_INFO.json")
@@ -40,61 +47,199 @@ secrets = load_secrets()
 TELEGRAM_TOKEN = secrets["TELEGRAM_TOKEN"]
 DEEPSEEK_API_KEY = secrets["DEEPSEEK_API_KEY"]
 DEEPSEEK_API_URL = secrets["DEEPSEEK_API_URL"]
-SYSTEM_PROMPT = load_personality_setting()
+BASE_SYSTEM_PROMPT = load_personality_setting()
 deepseek_chat_active = False  # 控制对话模式开关
 chat_lock = threading.Lock()  # 线程锁保证状态安全
 chat_context = {}  # 格式：{user_id: [{"role": "...", "content": "..."}]}
 context_lock = threading.Lock()  # 上下文操作的线程锁
-user_memory = {}  
+user_message_count = {}  # 记录对话轮数：{user_id: count}
+user_prompt_cache = {}  # USER_PROMPT缓存：{user_id: (prompt, cache_time)}
 
 # ========== 消息缓冲相关配置 ==========
-# 用户消息缓冲区 {user_id: [msg1, msg2, ...]}
-user_message_buffer = {}
-# 用户计时器存储 {user_id: timer_thread}
-user_timers = {}
-# 缓冲区操作锁
+user_message_buffer = {}  # {user_id: [msg1, msg2, ...]}
+user_timers = {}  # {user_id: timer_thread}
 buffer_lock = threading.Lock()
-# 消息收集时间范围（秒）
 COLLECT_MIN_TIME = 15
 COLLECT_MAX_TIME = 20
 
 # 初始化Telegram机器人
 tb_bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
+# ========== 长期记忆模块 ==========
+class LongTermMemory:
+    def __init__(self, user_id):
+        self.user_id = user_id
+        self.db_path = os.path.join(USER_MEMORIES_DIR, f"user_{user_id}.db")
+        self.csv_path = os.path.join(USER_MEMORIES_DIR, f"user_{user_id}_backup.csv")
+        self.lock = threading.Lock()
+        self.init_database()
+
+    def init_database(self):
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS memories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event TEXT NOT NULL,
+                    keywords TEXT NOT NULL,
+                    importance INTEGER NOT NULL,
+                    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expiry_days INTEGER NOT NULL,
+                    last_mentioned TIMESTAMP
+                )
+            ''')
+            conn.commit()
+            conn.close()
+
+    def load_valid_memories(self):
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT * FROM memories 
+                WHERE importance >= 30 
+                AND (expiry_days = 365 OR create_time >= datetime('now', '-' || expiry_days || ' days'))
+            ''')
+            memories = cursor.fetchall()
+            conn.close()
+            return memories
+
+    def match_keywords(self, input_keywords, max_matches=2):
+        matched = []
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM memories WHERE importance >= 50")
+            memories = cursor.fetchall()
+            
+            for mem in memories:
+                mem_id, event, keywords, imp, create_time, expiry, last_mention = mem
+                if any(kw in keywords for kw in input_keywords):
+                    matched.append(mem)
+                    if len(matched) >= max_matches:
+                        break
+            conn.close()
+        return matched
+
+    def update_last_mentioned(self, memory_id):
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE memories SET last_mentioned = CURRENT_TIMESTAMP WHERE id = ?",
+                (memory_id,)
+            )
+            conn.commit()
+            conn.close()
+
+    def update_memories(self, new_memories):
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # 旧记忆衰减
+            cursor.execute("SELECT id, importance, last_mentioned FROM memories")
+            all_mem = cursor.fetchall()
+            for mem_id, imp, last_mention in all_mem:
+                if last_mention and datetime.fromisoformat(last_mention) >= datetime.now() - timedelta(days=7):
+                    new_imp = imp * 0.98
+                else:
+                    new_imp = imp * 0.95
+                cursor.execute("UPDATE memories SET importance = ? WHERE id = ?", (new_imp, mem_id))
+            
+            # 插入新记忆（去重）
+            for mem in new_memories:
+                event, keywords, importance, expiry_days = mem
+                cursor.execute("SELECT id, importance FROM memories WHERE event LIKE ?", (f"%{event.split(' ')[1]}%",))
+                duplicates = cursor.fetchall()
+                if duplicates:
+                    for dup_id, dup_imp in duplicates:
+                        if importance > dup_imp:
+                            cursor.execute("DELETE FROM memories WHERE id = ?", (dup_id,))
+                cursor.execute('''
+                    INSERT INTO memories (event, keywords, importance, expiry_days)
+                    VALUES (?, ?, ?, ?)
+                ''', (event, keywords, importance, expiry_days))
+            
+            # 删除低价值记忆
+            cursor.execute("DELETE FROM memories WHERE importance < 10")
+            cursor.execute('''
+                DELETE FROM memories 
+                WHERE expiry_days != 365 
+                AND create_time < datetime('now', '-' || expiry_days || ' days')
+                AND last_mentioned < datetime('now', '-7 days')
+            ''')
+            
+            conn.commit()
+            conn.close()
+        
+        self.sync_to_csv()
+
+    def sync_to_csv(self):
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM memories")
+            rows = cursor.fetchall()
+            conn.close()
+            
+            with open(self.csv_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(['id', 'event', 'keywords', 'importance', 'create_time', 'expiry_days', 'last_mentioned'])
+                writer.writerows(rows)
+
+# 全局存储用户记忆实例
+user_memories = {}
+memory_lock = threading.Lock()
+
+def get_user_memory(user_id):
+    with memory_lock:
+        if user_id not in user_memories:
+            user_memories[user_id] = LongTermMemory(user_id)
+        return user_memories[user_id]
+
 # ====================== DeepSeek API调用函数 ======================
-def call_deepseek_api(user_id: int, prompt: str) -> str:
-    """调用DeepSeek官方API获取回复"""
+def call_deepseek_api(user_id: int, prompt: str, extra_context: str = "") -> str:
+    """调用DeepSeek官方API获取回复，支持添加额外记忆上下文"""
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
     }
+    
     with context_lock:
         if user_id not in chat_context:
-            # 首次对话：先添加系统提示词
-            chat_context[user_id] = [{"role": "system", "content": SYSTEM_PROMPT.strip()}]
-        # 添加当前用户输入（已打包的完整消息）
+            # 首次对话：加载系统提示词（包含USER_PROMPT）
+            user_prompt = generate_user_prompt(user_id)
+            full_system_prompt = f"{BASE_SYSTEM_PROMPT}\n\n{user_prompt}"
+            chat_context[user_id] = [{"role": "system", "content": full_system_prompt.strip()}]
+        else:
+            # 已存在上下文：检查是否需要添加额外记忆
+            if extra_context:
+                chat_context[user_id].append({"role": "system", "content": f"相关记忆：{extra_context}"})
+        
+        # 添加当前用户输入
         chat_context[user_id].append({"role": "user", "content": prompt})
         
-        # 可选：限制上下文长度（避免token超限），保留最近10轮对话
-        if len(chat_context[user_id]) > 21:  # 1条系统提示 + 10轮问答（20条）
+        # 限制上下文长度（1条系统提示 + 10轮问答）
+        if len(chat_context[user_id]) > 21:
             chat_context[user_id] = [chat_context[user_id][0]] + chat_context[user_id][-20:]
 
     data = {
-        "model": "deepseek-chat",  # DeepSeek默认模型
+        "model": "deepseek-chat",
         "messages": chat_context[user_id],
-        "temperature": 0.7,  # 回复随机性，0-1之间
-        "max_tokens": 2048   # 最大回复长度
+        "temperature": 0.7,
+        "max_tokens": 2048
     }
     
     try:
         response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data, timeout=30)
-        response.raise_for_status()  # 抛出HTTP错误
+        response.raise_for_status()
         result = response.json()
         assistant_reply = result["choices"][0]["message"]["content"].strip()
 
         with context_lock:
             chat_context[user_id].append({"role": "assistant", "content": assistant_reply})
-            # 再次检查长度（避免加了回复后超限）
             if len(chat_context[user_id]) > 21:
                 chat_context[user_id] = [chat_context[user_id][0]] + chat_context[user_id][-20:]
         
@@ -105,32 +250,145 @@ def call_deepseek_api(user_id: int, prompt: str) -> str:
     except KeyError as e:
         return f"API返回格式异常：缺少字段 {str(e)}"
 
+def generate_user_prompt(user_id):
+    """生成USER_PROMPT（核心层+动态层）"""
+    # 检查缓存（24小时内有效）
+    if user_id in user_prompt_cache:
+        prompt, cache_time = user_prompt_cache[user_id]
+        if time.time() - cache_time < 86400:
+            return prompt
+    
+    # 无缓存时调用API生成
+    memories = get_user_memory(user_id).load_valid_memories()
+    mem_descriptions = []
+    for mem in memories:
+        mem_descriptions.append(f"事件：{mem[1]}，关键词：{mem[2]}，重要度：{mem[3]}")
+    
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": "根据以下用户记忆，生成≤200字的USER_PROMPT，分核心层（永久属性）和动态层（临时事件）。核心层必加，动态层仅在相关时提及。"},
+            {"role": "user", "content": "\n".join(mem_descriptions)}
+        ]
+    }
+    
+    try:
+        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data, timeout=30)
+        user_prompt = response.json()["choices"][0]["message"]["content"].strip()
+        user_prompt_cache[user_id] = (user_prompt, time.time())
+        return user_prompt
+    except Exception as e:
+        print(f"生成USER_PROMPT失败：{e}")
+        return "用户信息加载中..."
+
+def extract_keywords(text):
+    """提取文本关键词（简化版，实际可优化）"""
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": "提取输入文本的核心关键词，用逗号分隔，不超过5个词。"},
+            {"role": "user", "content": text}
+        ]
+    }
+    try:
+        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data, timeout=10)
+        return response.json()["choices"][0]["message"]["content"].split(',')
+    except:
+        return text.split()[:5]
+
+def extract_new_memories(user_id):
+    """从最近对话中提取新记忆"""
+    with context_lock:
+        if user_id not in chat_context:
+            return []
+        recent_dialogs = chat_context[user_id][-20:]  # 最近10轮
+    
+    dialog_text = "\n".join([f"{d['role']}: {d['content']}" for d in recent_dialogs])
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": """从对话中提取用户的重要信息，按格式返回：
+事件（YYYY-MM-DD + 具体事件）,关键词（逗号分隔）,重要度(0-100),有效期（天，365=永久）
+仅保留重要信息，普通闲聊忽略。"""},
+            {"role": "user", "content": dialog_text}
+        ]
+    }
+    
+    try:
+        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data, timeout=30)
+        result = response.json()["choices"][0]["message"]["content"]
+        memories = []
+        for line in result.split('\n'):
+            if line.strip():
+                parts = line.split(',')
+                if len(parts) == 4:
+                    memories.append((parts[0].strip(), parts[1].strip(), int(parts[2].strip()), int(parts[3].strip())))
+        return memories
+    except Exception as e:
+        print(f"提取新记忆失败：{e}")
+        return []
+
 # ========== 消息打包与发送核心函数 ==========
 def process_user_messages(user_id):
-    """处理用户缓冲的消息：打包 -> 调用API -> 发送回复"""
+    """处理用户缓冲的消息：打包 -> 匹配记忆 -> 调用API -> 发送回复"""
     with buffer_lock:
-        # 1. 获取并清空用户缓冲区
         if user_id not in user_message_buffer or not user_message_buffer[user_id]:
-            # 清除该用户的计时器记录
             if user_id in user_timers:
                 del user_timers[user_id]
             return
         
-        # 打包消息（用换行分隔碎片化消息）
         packed_message = "\n".join(user_message_buffer[user_id])
-        # 清空缓冲区
         user_message_buffer[user_id] = []
-        # 清除计时器记录
         if user_id in user_timers:
             del user_timers[user_id]
     
     try:
-        # 2. 调用DeepSeek API获取回复
-        deepseek_reply = call_deepseek_api(user_id, packed_message)
+        # 更新对话轮数
+        with buffer_lock:
+            user_message_count[user_id] = user_message_count.get(user_id, 0) + 1
+            current_count = user_message_count[user_id]
+        
+        # 关键词提取与记忆匹配
+        keywords = extract_keywords(packed_message)
+        memory = get_user_memory(user_id)
+        matched_memories = memory.match_keywords(keywords)
+        extra_context = ""
+        if matched_memories:
+            extra_context = matched_memories[0][1]  # 取第一条匹配的事件
+        
+        # 调用API获取回复
+        deepseek_reply = call_deepseek_api(user_id, packed_message, extra_context)
         print(f"[Telegram] 用户{user_id}打包消息：{packed_message}")
         print(f"[Telegram] AI原始回复：{deepseek_reply}")
 
-        # 3. 拆分回复并逐段发送
+        # 检查是否需要更新记忆
+        update_triggered = (8 <= current_count <= 12) and (current_count % random.randint(1, 3) == 0)
+        high_importance_keywords = {"生病", "离职", "生日", "恋爱", "考试", "旅行"}
+        if not update_triggered and any(kw in packed_message for kw in high_importance_keywords):
+            update_triggered = True
+        
+        if update_triggered:
+            new_memories = extract_new_memories(user_id)
+            if new_memories:
+                memory.update_memories(new_memories)
+                print(f"[记忆更新] 用户{user_id}新增{len(new_memories)}条记忆")
+            # 重置计数
+            with buffer_lock:
+                user_message_count[user_id] = 0
+
+        # 拆分回复并发送
         reply_segments = [seg.strip() for seg in deepseek_reply.split('$') if seg.strip()]
         if not reply_segments:
             reply_segments = [deepseek_reply.strip()]
@@ -139,7 +397,6 @@ def process_user_messages(user_id):
             if not segment:
                 continue
             
-            # 计算发送延时
             base_delay = 2 if idx == 0 else 0.5
             char_delay = 2 / 10
             total_delay = base_delay + len(segment) * char_delay
@@ -157,76 +414,82 @@ def process_user_messages(user_id):
 def add_user_message(user_id, message_text):
     """添加用户消息到缓冲区，并管理计时器"""
     with buffer_lock:
-        # 初始化用户缓冲区
         if user_id not in user_message_buffer:
             user_message_buffer[user_id] = []
         
-        # 添加消息到缓冲区
         user_message_buffer[user_id].append(message_text)
         print(f"[Telegram] 用户{user_id}新增消息：{message_text} | 当前缓冲数：{len(user_message_buffer[user_id])}")
         
-        # 4. 管理计时器：如果已有计时器则重置，没有则创建
-        # 随机生成收集时间（15-20秒）
         collect_time = random.uniform(COLLECT_MIN_TIME, COLLECT_MAX_TIME)
         
         if user_id in user_timers:
-            # 取消现有计时器
             existing_timer = user_timers[user_id]
             existing_timer.cancel()
         
-        # 创建新计时器
         timer = threading.Timer(collect_time, process_user_messages, args=[user_id])
-        timer.daemon = True  # 设置为守护线程，不阻塞程序退出
+        timer.daemon = True
         timer.start()
         
-        # 保存新计时器
         user_timers[user_id] = timer
         print(f"[Telegram] 用户{user_id}启动/重置计时器，将在{collect_time:.1f}秒后处理消息")
 
 # ====================== Telegram消息处理器 ======================
-# 开启DeepSeek对话的命令（Telegram端）
 @tb_bot.message_handler(func=lambda msg: msg.text.strip() == "/start_aiGF")
 def handle_start_deepseek(message):
     global deepseek_chat_active
+    user_id = message.from_user.id
+    
     with chat_lock:
         deepseek_chat_active = True
+    
+    # 初始化用户记忆
+    get_user_memory(user_id)
+    # 生成初始USER_PROMPT
+    generate_user_prompt(user_id)
+    # 重置对话计数
+    with buffer_lock:
+        user_message_count[user_id] = 0
+    
     tb_bot.reply_to(message, "✅ ai女友对话已开启！现在可以直接发送消息获取回复，输入/stop_aiGF关闭该模式。")
-    print(f"[Telegram] 用户 {message.from_user.id} 开启了DeepSeek对话模式")
+    print(f"[Telegram] 用户 {user_id} 开启了DeepSeek对话模式")
 
-# 关闭DeepSeek对话的命令（Telegram端）
 @tb_bot.message_handler(func=lambda msg: msg.text.strip() == "/stop_aiGF")
 def handle_stop_deepseek(message):
     global deepseek_chat_active
     user_id = message.from_user.id
     
-    # 关闭对话模式
     with chat_lock:
         deepseek_chat_active = False
     
-    # 清空该用户的缓冲区和计时器
+    # 清空短期数据
     with buffer_lock:
         if user_id in user_message_buffer:
             del user_message_buffer[user_id]
         if user_id in user_timers:
             user_timers[user_id].cancel()
             del user_timers[user_id]
+        if user_id in user_message_count:
+            del user_message_count[user_id]
+    
+    # 清空上下文和缓存
+    with context_lock:
+        if user_id in chat_context:
+            del chat_context[user_id]
+    if user_id in user_prompt_cache:
+        del user_prompt_cache[user_id]
     
     tb_bot.reply_to(message, "❌ ai女友对话模式已关闭！")
     print(f"[Telegram] 用户 {user_id} 关闭了ai女友对话模式")
 
-# 核心：DeepSeek对话模式的消息处理（无触发词）
 @tb_bot.message_handler(func=lambda msg: True)
 def handle_deepseek_chat(message):
-    # 跳过命令类消息（避免重复处理）
     if message.text.strip().startswith(('/start_aiGF', '/stop_aiGF')):
         return
     
-    # 检查是否开启对话模式
     with chat_lock:
         if not deepseek_chat_active:
             return
     
-    # 获取用户输入
     user_input = message.text.strip()
     user_id = message.from_user.id
     
@@ -234,7 +497,6 @@ def handle_deepseek_chat(message):
         tb_bot.reply_to(message, "⚠️ 消息内容不能为空，请重新输入！")
         return
     
-    # 添加消息到缓冲区并启动/重置计时器
     add_user_message(user_id, user_input)
 
 # ====================== Telegram轮询线程 ======================
@@ -249,7 +511,6 @@ def start_telegram_polling():
         print(f"[Telegram] 轮询异常：{str(e)}")
 
 # ====================== NoneBot启动配置 ======================
-# NoneBot启动时开启Telegram轮询线程
 @driver.on_startup
 async def startup():
     polling_thread = threading.Thread(target=start_telegram_polling, daemon=True)
