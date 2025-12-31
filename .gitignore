@@ -27,3 +27,5 @@ __pycache__/
 
 # 忽略 user_memories 文件夹及其所有内容
 user_memories/
+
+OPTIMIZATION_REPORT.md
