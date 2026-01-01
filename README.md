@@ -2,6 +2,7 @@
 
 This is the entry-point README of the repository. For more detailed explanations and documentation (in Chinese), please refer to:
 
+- Chinese Installation Guide (INSTALL): [Click Here](docs\zh-CN\INSTALL.md)
 - Chinese Development Guide (DEVELOPMENT): [Click Here](docs\zh-CN\DEVELOPMENT.md)
 
 Since the project is still under development, other documents such as INSTALL.md are basically not maintained. Documents in other languages are also not available for the time being. The only Chinese documentation is also written in a casual, idea-driven manner without systematic organization.

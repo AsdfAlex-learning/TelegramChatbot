@@ -32,7 +32,7 @@ pip install -r requirements.txt
 4. 运行项目
 
 ```powershell
-python bot.py
+nb run
 ```
 
 如需帮助：请告诉我你在 Windows、Linux 还是容器中运行，以及是否需要我帮你自动安装依赖并运行一次测试。谢谢！
