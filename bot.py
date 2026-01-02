@@ -316,7 +316,7 @@ def handle_start_deepseek(message):
     user_id = message.from_user.id
     
     with chat_lock:
-        deepseek_chat_active = True
+        deepseek_chat_active.add(user_id)
     
     # 初始化用户记忆
     get_user_memory(user_id)
@@ -362,12 +362,12 @@ def handle_deepseek_chat(message):
     if message.text.strip().startswith(('/start_aiGF', '/stop_aiGF')):
         return
     
+    user_id = message.from_user.id
     with chat_lock:
-        if not deepseek_chat_active:
+        if user_id not in deepseek_chat_active:
             return
     
     user_input = message.text.strip()
-    user_id = message.from_user.id
     
     if not user_input:
         tb_bot.reply_to(message, "⚠️ 消息内容不能为空，请重新输入！")
@@ -381,10 +381,19 @@ def start_telegram_polling():
     print("📌 可用命令：")
     print("   /start_aiGF - 开启ai对话模式")
     print("   /stop_aiGF  - 关闭ai对话模式")
-    try:
-        tb_bot.polling(none_stop=True, timeout=60)
-    except Exception as e:
-        print(f"[Telegram] 轮询异常：{str(e)}")
+    backoff = 1
+    while True:
+        try:
+            tb_bot.polling(none_stop=True, timeout=90, long_polling_timeout=60)
+            backoff = 1
+        except requests.exceptions.ReadTimeout:
+            continue
+        except requests.exceptions.ConnectionError as e:
+            print(f"[Telegram] 轮询连接异常：{str(e)}")
+        except Exception as e:
+            print(f"[Telegram] 轮询异常：{str(e)}")
+        time.sleep(backoff)
+        backoff = min(backoff * 2, 60)
 
 # ====================== NoneBot启动配置 ======================
 @driver.on_startup
