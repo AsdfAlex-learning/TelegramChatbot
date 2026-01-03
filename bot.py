@@ -20,31 +20,78 @@ from memory import LongTermMemory
 nonebot.init(env_file=".env.prod")
 driver = get_driver()
 
-def load_secrets():
-    secrets_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config", "PROTECTED_INFO.json")
-    with open(secrets_path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-def load_personality_setting():
-    config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config")
-    json_path = os.path.join(config_dir, "Personality_Setting.json")
-    if not os.path.exists(json_path):
-        raise FileNotFoundError(f"个性设置文件不存在：{json_path}，请检查路径是否正确")
+def load_config():
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config", "config.json")
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"配置文件不存在：{config_path}（可参考 config/example_config.json）")
     try:
-        with open(json_path, "r", encoding="utf-8") as f:
-            setting = json.load(f)
-        system_prompt = setting.get("system_prompt", "")
-        if not system_prompt:
-            raise ValueError("JSON文件中未找到system_prompt字段，或字段值为空")
-        return system_prompt
+        with open(config_path, "r", encoding="utf-8") as f:
+            return json.load(f)
     except json.JSONDecodeError as e:
         raise ValueError(f"JSON文件格式错误：{str(e)}，请检查语法是否正确")
 
-secrets = load_secrets()
-TELEGRAM_TOKEN = secrets["TELEGRAM_TOKEN"]
-DEEPSEEK_API_KEY = secrets["DEEPSEEK_API_KEY"]
-DEEPSEEK_API_URL = secrets["DEEPSEEK_API_URL"]
-BASE_SYSTEM_PROMPT = load_personality_setting()
+def load_persona_card(card_name: str, config: dict):
+    default_name = "persona_setting"
+    system_prompt_section = config.get("system_prompt", {}) if isinstance(config, dict) else {}
+    default_persona = system_prompt_section.get("default_persona", "")
+
+    if not card_name or card_name == default_name:
+        return default_persona
+
+    persona_section = config.get("persona_card", {}) if isinstance(config, dict) else {}
+    cards = {}
+    if isinstance(persona_section, dict):
+        cards = persona_section.get("cards") if isinstance(persona_section.get("cards"), dict) else {}
+        if not cards and all(isinstance(v, str) for v in persona_section.values()):
+            cards = persona_section
+
+    if card_name in cards and isinstance(cards[card_name], str):
+        return cards[card_name]
+
+    persona_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config", "persona_card")
+    candidate_paths = [
+        os.path.join(persona_dir, f"{card_name}.txt"),
+        os.path.join(persona_dir, f"{card_name}.json"),
+    ]
+    for path in candidate_paths:
+        if not os.path.exists(path):
+            continue
+        if path.endswith(".txt"):
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+        with open(path, "r", encoding="utf-8") as f:
+            obj = json.load(f)
+        if isinstance(obj, str):
+            return obj
+        if isinstance(obj, dict):
+            for key in ("persona", "system_prompt", "content"):
+                if isinstance(obj.get(key), str) and obj.get(key).strip():
+                    return obj[key]
+    raise FileNotFoundError(f"未找到人格卡片：{card_name}")
+
+def build_base_system_prompt(config: dict):
+    system_prompt_section = config.get("system_prompt", {}) if isinstance(config, dict) else {}
+    core_rules = system_prompt_section.get("core_rules", "")
+    persona_section = config.get("persona_card", {}) if isinstance(config, dict) else {}
+    selected = "persona_setting"
+    if isinstance(persona_section, dict):
+        selected = persona_section.get("character_name") or persona_section.get("selected") or persona_section.get("name") or selected
+    elif isinstance(persona_section, str):
+        selected = persona_section
+    persona_text = load_persona_card(str(selected), config)
+    return "\n\n".join([str(core_rules).strip(), str(persona_text).strip()]).strip()
+
+config = load_config()
+TELEGRAM_TOKEN = config.get("telegram", {}).get("bot_token")
+DEEPSEEK_API_KEY = config.get("deepseek", {}).get("api_key")
+DEEPSEEK_API_URL = config.get("deepseek", {}).get("api_url")
+BASE_SYSTEM_PROMPT = build_base_system_prompt(config)
+if not TELEGRAM_TOKEN:
+    raise ValueError("config/config.json 缺少 telegram.bot_token")
+if not DEEPSEEK_API_KEY:
+    raise ValueError("config/config.json 缺少 deepseek.api_key")
+if not DEEPSEEK_API_URL:
+    raise ValueError("config/config.json 缺少 deepseek.api_url")
 deepseek_chat_active = set()  # 存储已开启AI对话的用户ID
 chat_lock = threading.Lock()  # 线程锁保证状态安全
 chat_context = {}  # 格式：{user_id: [{"role": "...", "content": "..."}]}

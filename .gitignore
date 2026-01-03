@@ -2,8 +2,7 @@
 .venv/
 
 # 忽略敏感配置文件（config目录下的JSON）
-config/Personality_Setting.json
-config/PROTECTED_INFO.json
+config/config.json
 
 # 忽略NoneBot的环境配置文件
 .env
