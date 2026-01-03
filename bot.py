@@ -195,9 +195,11 @@ def extract_new_memories(user_id):
     data = {
         "model": "deepseek-chat",
         "messages": [
-            {"role": "system", "content": """从对话中提取用户的重要信息，按格式返回：
-事件（YYYY-MM-DD + 具体事件）,关键词（逗号分隔）,重要度(0-100),有效期（天，365=永久）
-仅保留重要信息，普通闲聊忽略。"""},
+            {"role": "system", "content": 
+                """从对话中提取用户的重要信息，按格式返回：
+                事件（YYYY-MM-DD + 具体事件）,关键词（逗号分隔）,重要度(0-100),有效期（天，365=永久）
+                仅保留重要信息，普通闲聊忽略。
+                """},
             {"role": "user", "content": dialog_text}
         ]
     }
