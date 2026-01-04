@@ -109,6 +109,22 @@ COLLECT_MAX_TIME = 20
 # 初始化Telegram机器人
 tb_bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
+def safe_send_message(chat_id, text, max_attempts=3):
+    backoff = 1
+    for attempt in range(max_attempts):
+        try:
+            tb_bot.send_message(chat_id, text)
+            return True
+        except requests.exceptions.RequestException as e:
+            if attempt == max_attempts - 1:
+                print(f"[Telegram] 发送失败（chat_id={chat_id}）：{e}")
+                return False
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 10)
+        except Exception as e:
+            print(f"[Telegram] 发送异常（chat_id={chat_id}）：{e}")
+            return False
+
 # ========== 长期记忆模块 ==========
 # LongTermMemory 类已移动至 memory.py
 
@@ -328,12 +344,14 @@ def process_user_messages(user_id):
             total_delay = max(min(total_delay + random.uniform(-1, 1), 10), 1)
             
             time.sleep(total_delay)
-            tb_bot.send_message(user_id, segment)
-            print(f"[Telegram] 发第{idx+1}段（延时{total_delay:.2f}秒）：{segment}")
+            if safe_send_message(user_id, segment):
+                print(f"[Telegram] 发第{idx+1}段（延时{total_delay:.2f}秒）：{segment}")
+            else:
+                print(f"[Telegram] 发第{idx+1}段失败：{segment}")
     
     except Exception as e:
         error_msg = f"❌ 处理出错：{str(e)}"
-        tb_bot.send_message(user_id, error_msg)
+        safe_send_message(user_id, error_msg)
         print(f"[Telegram] 失败：{error_msg}")
 
 def add_user_message(user_id, message_text):
