@@ -9,6 +9,7 @@ import json
 import sys
 import sqlite3
 import csv
+import logging
 from datetime import datetime, timedelta
 from nonebot import on_command
 from nonebot.adapters import Message
@@ -120,11 +121,13 @@ def safe_send_message(chat_id, text, max_attempts=3):
         except requests.exceptions.RequestException as e:
             if attempt == max_attempts - 1:
                 print(f"[Telegram] 发送失败（chat_id={chat_id}）：{e}")
+                logging.error(f"[Telegram] 发送失败（chat_id={chat_id}）：{e}")
                 return False
             time.sleep(backoff)
             backoff = min(backoff * 2, 10)
         except Exception as e:
             print(f"[Telegram] 发送异常（chat_id={chat_id}）：{e}")
+            logging.error(f"[Telegram] 发送异常（chat_id={chat_id}）：{e}")
             return False
 
 # ========== 长期记忆模块 ==========
@@ -218,6 +221,7 @@ def generate_user_prompt(user_id):
         return user_prompt
     except Exception as e:
         print(f"生成USER_PROMPT失败：{e}")
+        logging.error(f"生成USER_PROMPT失败：{e}")
         return "用户信息加载中..."
 
 def extract_keywords(text):
@@ -275,6 +279,7 @@ def extract_new_memories(user_id):
         return memories
     except Exception as e:
         print(f"提取新记忆失败：{e}")
+        logging.error(f"提取新记忆失败：{e}")
         return []
 
 # ========== 消息打包与发送核心函数 ==========
@@ -304,8 +309,14 @@ def process_user_messages(user_id):
             extra_context = matched_memories[0][1]
         
         deepseek_reply = call_deepseek_api(user_id, packed_message, extra_context)
+        if not deepseek_reply:
+            print(f"[Telegram] 用户{user_id}调用API失败：{packed_message}")
+            logging.error(f"[Telegram] 用户{user_id}调用API失败：{packed_message}")
+            return
         print(f"[Telegram] 用户{user_id}打包消息：{packed_message}")
-        print(f"[Telegram] AI原始回复：{deepseek_reply}")
+        logging.info(f"[Telegram] 用户{user_id}打包消息：{packed_message}")
+        print(f"[Telegram] 用户{user_id}打包消息：{packed_message}")
+        logging.info(f"[Telegram] AI原始回复：{deepseek_reply}")
 
         update_triggered = (8 <= current_count <= 12) and (current_count % random.randint(1, 3) == 0)
         high_importance_keywords = {"生病", "离职", "生日", "恋爱", "考试", "旅行"}
@@ -316,7 +327,8 @@ def process_user_messages(user_id):
             new_memories = extract_new_memories(user_id)
             if new_memories:
                 memory.update_memories(new_memories)
-                print(f"[记忆更新] 用户{user_id}新增{len(new_memories)}条记忆")
+                print(f"[Telegram] 用户{user_id}新增{len(new_memories)}条记忆")
+                logging.info(f"[记忆更新] 用户{user_id}新增{len(new_memories)}条记忆")
             with buffer_lock:
                 user_message_count[user_id] = 0
 
@@ -336,13 +348,16 @@ def process_user_messages(user_id):
             time.sleep(total_delay)
             if safe_send_message(user_id, segment):
                 print(f"[Telegram] 发第{idx+1}段（延时{total_delay:.2f}秒）：{segment}")
+                logging.info(f"[Telegram] 发第{idx+1}段（延时{total_delay:.2f}秒）：{segment}")
             else:
                 print(f"[Telegram] 发第{idx+1}段失败：{segment}")
+                logging.warning(f"[Telegram] 发第{idx+1}段失败：{segment}")
     
     except Exception as e:
         error_msg = f"❌ 处理出错：{str(e)}"
         safe_send_message(user_id, error_msg)
         print(f"[Telegram] 失败：{error_msg}")
+        logging.error(f"[Telegram] 失败：{error_msg}")
 
 def add_user_message(user_id, message_text):
     """添加用户消息到缓冲区，并管理计时器"""
@@ -352,6 +367,7 @@ def add_user_message(user_id, message_text):
         
         user_message_buffer[user_id].append(message_text)
         print(f"[Telegram] 用户{user_id}新增消息：{message_text} | 当前缓冲数：{len(user_message_buffer[user_id])}")
+        logging.info(f"[Telegram] 用户{user_id}新增消息：{message_text} | 当前缓冲数：{len(user_message_buffer[user_id])}")
         
         collect_time = random.uniform(COLLECT_MIN_TIME, COLLECT_MAX_TIME)
         
@@ -365,8 +381,21 @@ def add_user_message(user_id, message_text):
         
         user_timers[user_id] = timer
         print(f"[Telegram] 用户{user_id}启动/重置计时器，将在{collect_time:.1f}秒后处理消息")
+        logging.info(f"[Telegram] 用户{user_id}启动/重置计时器，将在{collect_time:.1f}秒后处理消息")
 
 # ====================== Telegram消息处理器 ======================
+@tb_bot.message_handler(func=lambda msg: msg.text.strip() == "/help")
+def handle_help(message):
+    help_text = (
+        "📖 可用命令：\n"
+        "/start_aiGF - 开启ai女友对话模式\n"
+        "/stop_aiGF - 关闭ai女友对话模式\n"
+        "/help - 显示此帮助信息"
+    )
+    tb_bot.reply_to(message, help_text)
+    print(f"[Telegram] 用户 {message.from_user.id} 请求帮助")
+    logging.info(f"[Telegram] 用户 {message.from_user.id} 请求帮助")
+
 @tb_bot.message_handler(func=lambda msg: msg.text.strip() == "/start_aiGF")
 def handle_start_deepseek(message):
     global deepseek_chat_active
@@ -382,6 +411,7 @@ def handle_start_deepseek(message):
     
     tb_bot.reply_to(message, "✅ ai女友对话已开启！现在可以直接发送消息获取回复，输入/stop_aiGF关闭该模式。")
     print(f"[Telegram] 用户 {user_id} 开启了DeepSeek对话模式")
+    logging.info(f"[Telegram] 用户 {user_id} 开启了DeepSeek对话模式")
 
 @tb_bot.message_handler(func=lambda msg: msg.text.strip() == "/stop_aiGF")
 def handle_stop_deepseek(message):
@@ -408,6 +438,7 @@ def handle_stop_deepseek(message):
     
     tb_bot.reply_to(message, "❌ ai女友对话模式已关闭！")
     print(f"[Telegram] 用户 {user_id} 关闭了ai女友对话模式")
+    logging.info(f"[Telegram] 用户 {user_id} 关闭了ai女友对话模式")
 
 @tb_bot.message_handler(func=lambda msg: True)
 def handle_deepseek_chat(message):
@@ -421,6 +452,7 @@ def handle_deepseek_chat(message):
     
     user_input = message.text.strip()
     
+    # telegram无法发送空白消息 所以好像有没有无所谓
     if not user_input:
         tb_bot.reply_to(message, "⚠️ 消息内容不能为空，请重新输入！")
         return
@@ -429,10 +461,8 @@ def handle_deepseek_chat(message):
 
 # ====================== Telegram轮询线程 ======================
 def start_telegram_polling():
-    print("[Telegram] 机器人轮询已启动，等待消息...")
-    print("📌 可用命令：")
-    print("   /start_aiGF - 开启ai对话模式")
-    print("   /stop_aiGF  - 关闭ai对话模式")
+    print("[Telegram] 机器人轮询已启动，等待消息")
+    logging.info("[Telegram] 机器人轮询已启动，等待消息")
     backoff = 1
     while True:
         try:
@@ -442,8 +472,10 @@ def start_telegram_polling():
             continue
         except requests.exceptions.ConnectionError as e:
             print(f"[Telegram] 轮询连接异常：{str(e)}")
+            logging.error(f"[Telegram] 轮询连接异常：{str(e)}")
         except Exception as e:
             print(f"[Telegram] 轮询异常：{str(e)}")
+            logging.error(f"[Telegram] 轮询异常：{str(e)}")
         time.sleep(backoff)
         backoff = min(backoff * 2, 60)
 
@@ -456,4 +488,3 @@ async def startup():
 # ====================== 运行NoneBot ======================
 if __name__ == "__main__":
     nonebot.run()
-
