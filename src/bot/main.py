@@ -16,7 +16,7 @@ from nonebot.adapters import Message
 from nonebot.params import CommandArg
 from nonebot import get_driver
 from src.storage.memory import LongTermMemory
-
+from src.core.api_registry import APIRegistry
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -439,6 +439,26 @@ def handle_stop_deepseek(message):
     tb_bot.reply_to(message, "❌ ai女友对话模式已关闭！")
     print(f"[Telegram] 用户 {user_id} 关闭了ai女友对话模式")
     logging.info(f"[Telegram] 用户 {user_id} 关闭了ai女友对话模式")
+
+@tb_bot.message_handler(func=lambda msg: msg.text.strip().startswith("/weather"))
+def handle_weather(message):
+    try:
+        args = message.text.strip().split()
+        if len(args) < 2:
+            tb_bot.reply_to(message, "⚠️ 请输入城市名称，例如：/weather Beijing")
+            return
+        
+        city = args[1]
+        registry = APIRegistry()
+        weather_api = registry.get_api("weather")
+        
+        if weather_api:
+            result = weather_api.get_data(city)
+            tb_bot.reply_to(message, f"🌦️ {result}")
+        else:
+            tb_bot.reply_to(message, "⚠️ 天气服务未启用或不可用。")
+    except Exception as e:
+        tb_bot.reply_to(message, f"❌ 获取天气失败：{str(e)}")
 
 @tb_bot.message_handler(func=lambda msg: True)
 def handle_deepseek_chat(message):
