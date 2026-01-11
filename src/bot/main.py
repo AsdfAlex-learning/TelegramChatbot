@@ -17,6 +17,7 @@ from nonebot.params import CommandArg
 from nonebot import get_driver
 from src.storage.memory import LongTermMemory
 from src.core.api_registry import APIRegistry
+from src.bot.proactive_messaging import ProactiveScheduler
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -142,6 +143,9 @@ def get_user_memory(user_id):
         if user_id not in user_memories:
             user_memories[user_id] = LongTermMemory(user_id)
         return user_memories[user_id]
+
+# 初始化主动消息调度器
+proactive_scheduler = ProactiveScheduler(tb_bot, config, chat_context, context_lock, get_user_memory)
 
 # ====================== DeepSeek API调用函数 ======================
 def call_deepseek_api(user_id: int, prompt: str, extra_context: str = "") -> str:
@@ -409,6 +413,9 @@ def handle_start_deepseek(message):
     with buffer_lock:
         user_message_count[user_id] = 0
     
+    # 启动主动消息循环
+    proactive_scheduler.start(user_id)
+
     tb_bot.reply_to(message, "✅ ai女友对话已开启！现在可以直接发送消息获取回复，输入/stop_aiGF关闭该模式。")
     print(f"[Telegram] 用户 {user_id} 开启了DeepSeek对话模式")
     logging.info(f"[Telegram] 用户 {user_id} 开启了DeepSeek对话模式")
@@ -436,6 +443,9 @@ def handle_stop_deepseek(message):
     if user_id in user_prompt_cache:
         del user_prompt_cache[user_id]
     
+    # 停止主动消息循环
+    proactive_scheduler.stop(user_id)
+
     tb_bot.reply_to(message, "❌ ai女友对话模式已关闭！")
     print(f"[Telegram] 用户 {user_id} 关闭了ai女友对话模式")
     logging.info(f"[Telegram] 用户 {user_id} 关闭了ai女友对话模式")
@@ -477,6 +487,9 @@ def handle_deepseek_chat(message):
         tb_bot.reply_to(message, "⚠️ 消息内容不能为空，请重新输入！")
         return
     
+    # 用户活跃，重置主动消息计时器
+    proactive_scheduler.on_user_activity(user_id)
+
     add_user_message(user_id, user_input)
 
 # ====================== Telegram轮询线程 ======================
