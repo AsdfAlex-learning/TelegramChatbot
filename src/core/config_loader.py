@@ -1,46 +1,59 @@
 import os
-import json
+import yaml
 import logging
+from src.core.config import AppConfig, GlobalAPIConfig
 
 class ConfigLoader:
     _instance = None
-    _config = {}
-    _config_path = ""
-
+    _app_config: AppConfig = None
+    _api_config: GlobalAPIConfig = None
+    
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(ConfigLoader, cls).__new__(cls)
-            cls._instance._load_config()
+            cls._instance.reload()
         return cls._instance
 
-    def _load_config(self):
+    def reload(self):
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        self._config_path = os.path.join(project_root, "config", "api_config", "global_config.json")
         
-        if not os.path.exists(self._config_path):
-            logging.warning(f"Config file not found at {self._config_path}, creating default.")
-            self._create_default_config()
+        # Load Main Config (YAML)
+        config_path = os.path.join(project_root, "config", "config.yaml")
+        if not os.path.exists(config_path):
+            logging.error(f"Config file missing: {config_path}")
+            raise FileNotFoundError(f"Config file missing: {config_path}")
         
         try:
-            with open(self._config_path, 'r', encoding='utf-8') as f:
-                self._config = json.load(f)
+            with open(config_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+            self._app_config = AppConfig(**data)
         except Exception as e:
-            logging.error(f"Failed to load config: {e}")
-            self._config = {}
+            logging.critical(f"Failed to load app config: {e}")
+            raise
 
-    def _create_default_config(self):
-        default_config = {
-            "api_settings": {}
-        }
-        os.makedirs(os.path.dirname(self._config_path), exist_ok=True)
-        with open(self._config_path, 'w', encoding='utf-8') as f:
-            json.dump(default_config, f, indent=4)
-        self._config = default_config
+        # Load API Config (YAML)
+        api_config_path = os.path.join(project_root, "config", "api_config", "global_config.yaml")
+        try:
+            if os.path.exists(api_config_path):
+                with open(api_config_path, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f)
+                self._api_config = GlobalAPIConfig(**data)
+            else:
+                self._api_config = GlobalAPIConfig()
+        except Exception as e:
+            logging.error(f"Failed to load API config: {e}")
+            self._api_config = GlobalAPIConfig()
 
+    @property
+    def app_config(self) -> AppConfig:
+        return self._app_config
+
+    @property
+    def api_config(self) -> GlobalAPIConfig:
+        return self._api_config
+    
+    # Backward compatibility for API registry and ConfigLoader.get_config()
     def get_config(self, key=None):
         if key:
-            return self._config.get("api_settings", {}).get(key, {})
-        return self._config.get("api_settings", {})
-
-    def reload(self):
-        self._load_config()
+            return self._api_config.api_settings.get(key, {})
+        return self._api_config.api_settings

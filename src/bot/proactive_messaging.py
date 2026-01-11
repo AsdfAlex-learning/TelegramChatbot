@@ -13,8 +13,13 @@ class ProactiveScheduler:
         self.context_lock = context_lock
         self.memory_provider = memory_provider
         
-        self.api_key = config.get("deepseek", {}).get("api_key")
-        self.api_url = config.get("deepseek", {}).get("api_url")
+        # Check if config is AppConfig object or dict (for backward compatibility during migration)
+        if hasattr(config, "deepseek"):
+            self.api_key = config.deepseek.api_key
+            self.api_url = config.deepseek.api_url
+        else:
+            self.api_key = config.get("deepseek", {}).get("api_key")
+            self.api_url = config.get("deepseek", {}).get("api_url")
         
         self.check_timers = {}  # user_id -> Timer (Main Loop)
         self.send_timers = {}   # user_id -> Timer (Pending Send)

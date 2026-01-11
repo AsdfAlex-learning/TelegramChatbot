@@ -17,6 +17,8 @@ from nonebot.params import CommandArg
 from nonebot import get_driver
 from src.storage.memory import LongTermMemory
 from src.core.api_registry import APIRegistry
+from src.core.config_loader import ConfigLoader
+from src.core.config import AppConfig
 from src.bot.proactive_messaging import ProactiveScheduler
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -24,32 +26,16 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 nonebot.init(env_file=os.path.join(PROJECT_ROOT, ".env.prod"))
 driver = get_driver()
 
-def load_config():
-    config_path = os.path.join(PROJECT_ROOT, "config", "config.json")
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"配置文件不存在：{config_path}（可参考 config/example_config.json）")
-    try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"JSON文件格式错误：{str(e)}，请检查语法是否正确")
-
-def load_persona_card(card_name: str, config: dict):
+def load_persona_card(card_name: str, app_config: AppConfig):
     default_name = "persona_setting"
-    system_prompt_section = config.get("system_prompt", {}) if isinstance(config, dict) else {}
-    default_persona = system_prompt_section.get("default_persona", "")
+    default_persona = app_config.system_prompt.default_persona
 
     if not card_name or card_name == default_name:
         return default_persona
 
-    persona_section = config.get("persona_card", {}) if isinstance(config, dict) else {}
-    cards = {}
-    if isinstance(persona_section, dict):
-        cards = persona_section.get("cards") if isinstance(persona_section.get("cards"), dict) else {}
-        if not cards and all(isinstance(v, str) for v in persona_section.values()):
-            cards = persona_section
+    cards = app_config.persona_card
 
-    if card_name in cards and isinstance(cards[card_name], str):
+    if card_name in cards:
         return cards[card_name]
 
     persona_dir = os.path.join(PROJECT_ROOT, "config", "persona_card")
@@ -73,29 +59,22 @@ def load_persona_card(card_name: str, config: dict):
                     return obj[key]
     raise FileNotFoundError(f"未找到人格卡片：{card_name}")
 
-def build_base_system_prompt(config: dict):
-    system_prompt_section = config.get("system_prompt", {}) if isinstance(config, dict) else {}
-    core_rules = system_prompt_section.get("core_rules", "")
-    persona_section = config.get("persona_card", {}) if isinstance(config, dict) else {}
+def build_base_system_prompt(app_config: AppConfig):
+    core_rules = app_config.system_prompt.core_rules
     selected = "persona_setting"
-    if isinstance(persona_section, dict):
-        selected = persona_section.get("character_name") or persona_section.get("selected") or persona_section.get("name") or selected
-    elif isinstance(persona_section, str):
-        selected = persona_section
-    persona_text = load_persona_card(str(selected), config)
+    # Future: Add selected_persona to AppConfig if needed
+    
+    persona_text = load_persona_card(str(selected), app_config)
     return "\n\n".join([str(core_rules).strip(), str(persona_text).strip()]).strip()
 
-config = load_config()
-TELEGRAM_TOKEN = config.get("telegram", {}).get("bot_token")
-DEEPSEEK_API_KEY = config.get("deepseek", {}).get("api_key")
-DEEPSEEK_API_URL = config.get("deepseek", {}).get("api_url")
-BASE_SYSTEM_PROMPT = build_base_system_prompt(config)
-if not TELEGRAM_TOKEN:
-    raise ValueError("config/config.json 缺少 telegram.bot_token")
-if not DEEPSEEK_API_KEY:
-    raise ValueError("config/config.json 缺少 deepseek.api_key")
-if not DEEPSEEK_API_URL:
-    raise ValueError("config/config.json 缺少 deepseek.api_url")
+config_loader = ConfigLoader()
+app_config = config_loader.app_config
+
+TELEGRAM_TOKEN = app_config.telegram.bot_token
+DEEPSEEK_API_KEY = app_config.deepseek.api_key
+DEEPSEEK_API_URL = app_config.deepseek.api_url
+BASE_SYSTEM_PROMPT = build_base_system_prompt(app_config)
+
 deepseek_chat_active = set()  # 存储已开启AI对话的用户ID
 chat_lock = threading.Lock()  # 线程锁保证状态安全
 chat_context = {}  # 格式：{user_id: [{"role": "...", "content": "..."}]}
@@ -145,7 +124,7 @@ def get_user_memory(user_id):
         return user_memories[user_id]
 
 # 初始化主动消息调度器
-proactive_scheduler = ProactiveScheduler(tb_bot, config, chat_context, context_lock, get_user_memory)
+proactive_scheduler = ProactiveScheduler(tb_bot, app_config, chat_context, context_lock, get_user_memory)
 
 # ====================== DeepSeek API调用函数 ======================
 def call_deepseek_api(user_id: int, prompt: str, extra_context: str = "") -> str:
