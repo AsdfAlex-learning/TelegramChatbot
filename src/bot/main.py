@@ -18,67 +18,26 @@ from nonebot import get_driver
 from src.storage.memory import LongTermMemory
 from src.core.api_registry import APIRegistry
 from src.core.config_loader import ConfigLoader
-from src.core.config import AppConfig
 from src.bot.proactive_messaging import ProactiveScheduler
+from src.core.context import ConversationContext
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 nonebot.init(env_file=os.path.join(PROJECT_ROOT, ".env.prod"))
 driver = get_driver()
 
-def load_persona_card(card_name: str, app_config: AppConfig):
-    default_name = "persona_setting"
-    default_persona = app_config.system_prompt.default_persona
-
-    if not card_name or card_name == default_name:
-        return default_persona
-
-    cards = app_config.persona_card
-
-    if card_name in cards:
-        return cards[card_name]
-
-    persona_dir = os.path.join(PROJECT_ROOT, "config", "persona_card")
-    candidate_paths = [
-        os.path.join(persona_dir, f"{card_name}.txt"),
-        os.path.join(persona_dir, f"{card_name}.json"),
-    ]
-    for path in candidate_paths:
-        if not os.path.exists(path):
-            continue
-        if path.endswith(".txt"):
-            with open(path, "r", encoding="utf-8") as f:
-                return f.read()
-        with open(path, "r", encoding="utf-8") as f:
-            obj = json.load(f)
-        if isinstance(obj, str):
-            return obj
-        if isinstance(obj, dict):
-            for key in ("persona", "system_prompt", "content"):
-                if isinstance(obj.get(key), str) and obj.get(key).strip():
-                    return obj[key]
-    raise FileNotFoundError(f"未找到人格卡片：{card_name}")
-
-def build_base_system_prompt(app_config: AppConfig):
-    core_rules = app_config.system_prompt.core_rules
-    selected = "persona_setting"
-    # Future: Add selected_persona to AppConfig if needed
-    
-    persona_text = load_persona_card(str(selected), app_config)
-    return "\n\n".join([str(core_rules).strip(), str(persona_text).strip()]).strip()
-
 config_loader = ConfigLoader()
-app_config = config_loader.app_config
+system_config = config_loader.system_config
 
-TELEGRAM_TOKEN = app_config.telegram.bot_token
-DEEPSEEK_API_KEY = app_config.deepseek.api_key
-DEEPSEEK_API_URL = app_config.deepseek.api_url
-BASE_SYSTEM_PROMPT = build_base_system_prompt(app_config)
-OWNER_ID = app_config.telegram.owner_id
+TELEGRAM_TOKEN = system_config.telegram.bot_token
+LLM_API_KEY = system_config.llm.api_key
+LLM_API_URL = system_config.llm.api_url
+LLM_MODEL = system_config.llm.model
+OWNER_ID = system_config.telegram.owner_id
 
-bot_is_private = True  # 默认开启私有模式，仅Owner可用
+bot_is_private = system_config.bot.private_mode_default  # 默认开启私有模式，仅Owner可用
 
-deepseek_chat_active = set()  # 存储已开启AI对话的用户ID
+ai_chat_active = set()  # 存储已开启AI对话的用户ID
 chat_lock = threading.Lock()  # 线程锁保证状态安全
 chat_context = {}  # 格式：{user_id: [{"role": "...", "content": "..."}]}
 context_lock = threading.Lock()  # 上下文操作的线程锁
@@ -89,8 +48,6 @@ user_prompt_cache = {}  # USER_PROMPT缓存：{user_id: (prompt, cache_time)}
 user_message_buffer = {}  # {user_id: [msg1, msg2, ...]}
 user_timers = {}  # {user_id: timer_thread}
 buffer_lock = threading.Lock()
-COLLECT_MIN_TIME = 15
-COLLECT_MAX_TIME = 20
 
 # 初始化Telegram机器人
 tb_bot = telebot.TeleBot(TELEGRAM_TOKEN)
@@ -127,47 +84,58 @@ def get_user_memory(user_id):
         return user_memories[user_id]
 
 # 初始化主动消息调度器
-proactive_scheduler = ProactiveScheduler(tb_bot, app_config, chat_context, context_lock, get_user_memory)
+proactive_scheduler = ProactiveScheduler(tb_bot, system_config, config_loader.prompt_manager, chat_context, context_lock, get_user_memory)
 
-# ====================== DeepSeek API调用函数 ======================
-def call_deepseek_api(user_id: int, prompt: str, extra_context: str = "") -> str:
-    """调用DeepSeek官方API获取回复，支持添加额外记忆上下文"""
+# ====================== LLM API调用函数 ======================
+def call_llm_api(user_id: int, prompt: str, extra_context: str = "") -> str:
+    """调用OpenAI Compatible API获取回复，支持添加额外记忆上下文"""
     headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Authorization": f"Bearer {LLM_API_KEY}",
         "Content-Type": "application/json"
     }
     
     with context_lock:
         if user_id not in chat_context:
-            user_prompt = generate_user_prompt(user_id)
-            full_system_prompt = f"{BASE_SYSTEM_PROMPT}\n\n{user_prompt}"
-            chat_context[user_id] = [{"role": "system", "content": full_system_prompt.strip()}]
-        else:
-            if extra_context:
-                chat_context[user_id].append({"role": "system", "content": f"相关记忆：{extra_context}"})
+            chat_context[user_id] = ConversationContext()
         
-        chat_context[user_id].append({"role": "user", "content": prompt})
-        
-        if len(chat_context[user_id]) > 21:
-            chat_context[user_id] = [chat_context[user_id][0]] + chat_context[user_id][-20:]
+        chat_context[user_id].add_message("user", prompt)
+
+    # Prepare Conversation String (History excluding current message)
+    conversation_str = chat_context[user_id].format(exclude_last_n=1)
+
+    # Prepare Memory String
+    user_summary = "用户信息加载中..."
+    if user_id in user_prompt_cache:
+        user_summary, _ = user_prompt_cache[user_id]
+    else:
+        user_summary = generate_user_prompt(user_id)
+
+    memory_str = user_summary
+    if extra_context:
+        memory_str += f"\n\n【相关记忆细节】\n{extra_context}"
+
+    # Build Final Prompt using PromptManager
+    final_prompt = config_loader.prompt_manager.build_prompt(
+        user_message=prompt,
+        memory=memory_str,
+        conversation=conversation_str
+    )
 
     data = {
-        "model": "deepseek-chat",
-        "messages": chat_context[user_id],
-        "temperature": 0.7,
-        "max_tokens": 2048
+        "model": LLM_MODEL,
+        "messages": [{"role": "user", "content": final_prompt}],
+        "temperature": system_config.llm.temperature,
+        "max_tokens": system_config.llm.max_tokens
     }
     
     try:
-        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data, timeout=30)
+        response = requests.post(LLM_API_URL, headers=headers, json=data, timeout=30)
         response.raise_for_status()
         result = response.json()
         assistant_reply = result["choices"][0]["message"]["content"].strip()
 
         with context_lock:
-            chat_context[user_id].append({"role": "assistant", "content": assistant_reply})
-            if len(chat_context[user_id]) > 21:
-                chat_context[user_id] = [chat_context[user_id][0]] + chat_context[user_id][-20:]
+            chat_context[user_id].add_message("assistant", assistant_reply)
         
         return assistant_reply
     
@@ -189,11 +157,11 @@ def generate_user_prompt(user_id):
         mem_descriptions.append(f"事件：{mem[1]}，关键词：{mem[2]}，重要度：{mem[3]}")
     
     headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Authorization": f"Bearer {LLM_API_KEY}",
         "Content-Type": "application/json"
     }
     data = {
-        "model": "deepseek-chat",
+        "model": LLM_MODEL,
         "messages": [
             {"role": "system", "content": "根据以下用户记忆，生成≤200字的USER_PROMPT，分核心层（永久属性）和动态层（临时事件）。核心层必加，动态层仅在相关时提及。"},
             {"role": "user", "content": "\n".join(mem_descriptions)}
@@ -201,7 +169,7 @@ def generate_user_prompt(user_id):
     }
     
     try:
-        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data, timeout=30)
+        response = requests.post(LLM_API_URL, headers=headers, json=data, timeout=30)
         user_prompt = response.json()["choices"][0]["message"]["content"].strip()
         user_prompt_cache[user_id] = (user_prompt, time.time())
         return user_prompt
@@ -213,18 +181,18 @@ def generate_user_prompt(user_id):
 def extract_keywords(text):
     """提取文本关键词（简化版，实际可优化）"""
     headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Authorization": f"Bearer {LLM_API_KEY}",
         "Content-Type": "application/json"
     }
     data = {
-        "model": "deepseek-chat",
+        "model": LLM_MODEL,
         "messages": [
             {"role": "system", "content": "提取输入文本的核心关键词，用逗号分隔，不超过5个词。"},
             {"role": "user", "content": text}
         ]
     }
     try:
-        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data, timeout=10)
+        response = requests.post(LLM_API_URL, headers=headers, json=data, timeout=10)
         return response.json()["choices"][0]["message"]["content"].split(',')
     except:
         return text.split()[:5]
@@ -234,15 +202,15 @@ def extract_new_memories(user_id):
     with context_lock:
         if user_id not in chat_context:
             return []
-        recent_dialogs = chat_context[user_id][-20:]
+        recent_dialogs = chat_context[user_id].get_raw_history()[-20:]
     
     dialog_text = "\n".join([f"{d['role']}: {d['content']}" for d in recent_dialogs])
     headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Authorization": f"Bearer {LLM_API_KEY}",
         "Content-Type": "application/json"
     }
     data = {
-        "model": "deepseek-chat",
+        "model": LLM_MODEL,
         "messages": [
             {"role": "system", "content": 
                 """从对话中提取用户的重要信息，按格式返回：
@@ -254,7 +222,7 @@ def extract_new_memories(user_id):
     }
     
     try:
-        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data, timeout=30)
+        response = requests.post(LLM_API_URL, headers=headers, json=data, timeout=30)
         result = response.json()["choices"][0]["message"]["content"]
         memories = []
         for line in result.split('\n'):
@@ -294,15 +262,15 @@ def process_user_messages(user_id):
         if matched_memories:
             extra_context = matched_memories[0][1]
         
-        deepseek_reply = call_deepseek_api(user_id, packed_message, extra_context)
-        if not deepseek_reply:
+        assistant_reply = call_llm_api(user_id, packed_message, extra_context)
+        if not assistant_reply:
             print(f"[Telegram] 用户{user_id}调用API失败：{packed_message}")
             logging.error(f"[Telegram] 用户{user_id}调用API失败：{packed_message}")
             return
         print(f"[Telegram] 用户{user_id}打包消息：{packed_message}")
         logging.info(f"[Telegram] 用户{user_id}打包消息：{packed_message}")
         print(f"[Telegram] 用户{user_id}打包消息：{packed_message}")
-        logging.info(f"[Telegram] AI原始回复：{deepseek_reply}")
+        logging.info(f"[Telegram] AI原始回复：{assistant_reply}")
 
         update_triggered = (8 <= current_count <= 12) and (current_count % random.randint(1, 3) == 0)
         high_importance_keywords = {"生病", "离职", "生日", "恋爱", "考试", "旅行"}
@@ -318,9 +286,15 @@ def process_user_messages(user_id):
             with buffer_lock:
                 user_message_count[user_id] = 0
 
-        reply_segments = [seg.strip() for seg in deepseek_reply.split('$') if seg.strip()]
+        # Split by $ first, then by newlines to handle cases where AI uses \n instead of $
+        raw_segments = assistant_reply.split('$')
+        reply_segments = []
+        for seg in raw_segments:
+            lines = [line.strip() for line in seg.split('\n') if line.strip()]
+            reply_segments.extend(lines)
+            
         if not reply_segments:
-            reply_segments = [deepseek_reply.strip()]
+            reply_segments = [assistant_reply.strip()]
 
         for idx, segment in enumerate(reply_segments):
             if not segment:
@@ -355,7 +329,10 @@ def add_user_message(user_id, message_text):
         print(f"[Telegram] 用户{user_id}新增消息：{message_text} | 当前缓冲数：{len(user_message_buffer[user_id])}")
         logging.info(f"[Telegram] 用户{user_id}新增消息：{message_text} | 当前缓冲数：{len(user_message_buffer[user_id])}")
         
-        collect_time = random.uniform(COLLECT_MIN_TIME, COLLECT_MAX_TIME)
+        collect_time = random.uniform(
+            system_config.message_buffer.collect_min_time, 
+            system_config.message_buffer.collect_max_time
+        )
         
         if user_id in user_timers:
             existing_timer = user_timers[user_id]
@@ -409,8 +386,8 @@ def handle_set_private(message):
         tb_bot.reply_to(message, "Usage: /set_private [true|false]")
 
 @tb_bot.message_handler(func=lambda msg: msg.text.strip() == "/start_aiGF")
-def handle_start_deepseek(message):
-    global deepseek_chat_active
+def handle_start_ai_chat(message):
+    global ai_chat_active
     user_id = message.from_user.id
     
     if bot_is_private and user_id != OWNER_ID:
@@ -418,7 +395,7 @@ def handle_start_deepseek(message):
         return
         
     with chat_lock:
-        deepseek_chat_active.add(user_id)
+        ai_chat_active.add(user_id)
     
     get_user_memory(user_id)
     generate_user_prompt(user_id)
@@ -433,12 +410,12 @@ def handle_start_deepseek(message):
     logging.info(f"[Telegram] 用户 {user_id} 开启了DeepSeek对话模式")
 
 @tb_bot.message_handler(func=lambda msg: msg.text.strip() == "/stop_aiGF")
-def handle_stop_deepseek(message):
-    global deepseek_chat_active
+def handle_stop_ai_chat(message):
+    global ai_chat_active
     user_id = message.from_user.id
     
     with chat_lock:
-        deepseek_chat_active.discard(user_id)
+        ai_chat_active.discard(user_id)
     
     with buffer_lock:
         if user_id in user_message_buffer:
@@ -483,7 +460,7 @@ def handle_weather(message):
         tb_bot.reply_to(message, f"❌ 获取天气失败：{str(e)}")
 
 @tb_bot.message_handler(func=lambda msg: True)
-def handle_deepseek_chat(message):
+def handle_ai_chat(message):
     if message.text.strip().startswith(('/start_aiGF', '/stop_aiGF', '/set_private','/help')):
         return
     
@@ -493,14 +470,14 @@ def handle_deepseek_chat(message):
     if bot_is_private and user_id != OWNER_ID:
         # 如果用户之前在活跃列表里，现在被踢出去了
         with chat_lock:
-            if user_id in deepseek_chat_active:
-                deepseek_chat_active.discard(user_id)
+            if user_id in ai_chat_active:
+                ai_chat_active.discard(user_id)
                 proactive_scheduler.stop(user_id)
                 tb_bot.reply_to(message, "🔒 机器人已切换至私有模式，您的会话已结束。")
         return
 
     with chat_lock:
-        if user_id not in deepseek_chat_active:
+        if user_id not in ai_chat_active:
             return
     
     user_input = message.text.strip()

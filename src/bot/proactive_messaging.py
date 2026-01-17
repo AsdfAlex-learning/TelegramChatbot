@@ -6,20 +6,30 @@ import requests
 from src.storage.memory import LongTermMemory
 
 class ProactiveScheduler:
-    def __init__(self, bot, config, chat_context, context_lock, memory_provider):
+    def __init__(self, bot, config, prompt_manager, chat_context, context_lock, memory_provider):
         self.bot = bot
         self.config = config
+        self.prompt_manager = prompt_manager
         self.chat_context = chat_context
         self.context_lock = context_lock
         self.memory_provider = memory_provider
         
-        # Check if config is AppConfig object or dict (for backward compatibility during migration)
-        if hasattr(config, "deepseek"):
+        # Standardize API Config (OpenAI Compatible)
+        if hasattr(config, "llm"):
+            self.api_key = config.llm.api_key
+            self.api_url = config.llm.api_url
+            self.model = config.llm.model
+        elif hasattr(config, "deepseek"):
+            # Legacy support
             self.api_key = config.deepseek.api_key
             self.api_url = config.deepseek.api_url
+            self.model = "deepseek-chat"
         else:
-            self.api_key = config.get("deepseek", {}).get("api_key")
-            self.api_url = config.get("deepseek", {}).get("api_url")
+            # Dict fallback
+            llm_cfg = config.get("llm", config.get("deepseek", {}))
+            self.api_key = llm_cfg.get("api_key")
+            self.api_url = llm_cfg.get("api_url")
+            self.model = llm_cfg.get("model", "deepseek-chat")
         
         self.check_timers = {}  # user_id -> Timer (Main Loop)
         self.send_timers = {}   # user_id -> Timer (Pending Send)
@@ -134,10 +144,7 @@ class ProactiveScheduler:
                 # 记录到上下文，以便后续对话有记忆
                 with self.context_lock:
                     if user_id in self.chat_context:
-                        self.chat_context[user_id].append({"role": "assistant", "content": content})
-                        # 保持上下文长度
-                        if len(self.chat_context[user_id]) > 21:
-                            self.chat_context[user_id] = [self.chat_context[user_id][0]] + self.chat_context[user_id][-20:]
+                        self.chat_context[user_id].add_message("assistant", content)
             
         except Exception as e:
             logging.error(f"[Proactive] Failed to send: {e}")
@@ -159,14 +166,15 @@ class ProactiveScheduler:
         
         mem_text = "\n".join([f"- {m[1]} (关键词:{m[2]})" for m in top_memories])
         
-        system_prompt = (
-            "你是用户的贴心伴侣。请根据以下用户的重要记忆，主动发起一个温馨的话题。\n"
-            "要求：\n"
-            "1. 语气自然、亲切，像日常聊天，不要太生硬。\n"
-            "2. 结合记忆内容，表现出对用户的关心。\n"
-            "3. 简短一些，一两句话即可。\n"
-            "4. 不要重复之前的话题。\n\n"
-            f"相关记忆：\n{mem_text}"
+        instruction = (
+            "（系统指令：请忽略上文的‘回复用户’要求。现在是空闲时间，请根据【用户记忆】主动发起一个温馨的话题。"
+            "语气自然亲切，不要太生硬，一两句话即可。）"
+        )
+        
+        final_prompt = self.prompt_manager.build_prompt(
+            user_message=instruction,
+            memory=mem_text,
+            conversation="暂无"
         )
         
         headers = {
@@ -174,10 +182,9 @@ class ProactiveScheduler:
             "Content-Type": "application/json"
         }
         data = {
-            "model": "deepseek-chat",
+            "model": self.model,
             "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": "现在是空闲时间，请生成一条发给用户的消息。"}
+                {"role": "user", "content": final_prompt}
             ]
         }
         

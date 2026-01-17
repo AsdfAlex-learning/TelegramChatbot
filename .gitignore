@@ -9,7 +9,7 @@ venv.bak/
 
 # ==================== 敏感配置 & 环境变量 ====================
 # 项目配置文件（仅忽略实际配置，保留示例配置）
-config/config.yaml
+config/system.yaml
 # NoneBot/项目环境变量文件
 .env
 .env.dev
