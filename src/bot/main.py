@@ -74,6 +74,9 @@ TELEGRAM_TOKEN = app_config.telegram.bot_token
 DEEPSEEK_API_KEY = app_config.deepseek.api_key
 DEEPSEEK_API_URL = app_config.deepseek.api_url
 BASE_SYSTEM_PROMPT = build_base_system_prompt(app_config)
+OWNER_ID = app_config.telegram.owner_id
+
+bot_is_private = True  # 默认开启私有模式，仅Owner可用
 
 deepseek_chat_active = set()  # 存储已开启AI对话的用户ID
 chat_lock = threading.Lock()  # 线程锁保证状态安全
@@ -373,17 +376,47 @@ def handle_help(message):
         "📖 可用命令：\n"
         "/start_aiGF - 开启ai女友对话模式\n"
         "/stop_aiGF - 关闭ai女友对话模式\n"
+        "/set_private [true|false] - 设置机器人是否仅对Owner可用\n"
         "/help - 显示此帮助信息"
     )
     tb_bot.reply_to(message, help_text)
     print(f"[Telegram] 用户 {message.from_user.id} 请求帮助")
     logging.info(f"[Telegram] 用户 {message.from_user.id} 请求帮助")
 
+@tb_bot.message_handler(func=lambda msg: msg.text.strip().startswith("/set_private"))
+def handle_set_private(message):
+    global bot_is_private
+    user_id = message.from_user.id
+    if user_id != OWNER_ID:
+        # 权限不足，直接忽略或拒绝
+        return 
+    
+    parts = message.text.strip().split()
+    if len(parts) != 2:
+        tb_bot.reply_to(message, "Usage: /set_private [true|false]")
+        return
+        
+    arg = parts[1].lower()
+    if arg == "true":
+        bot_is_private = True
+        tb_bot.reply_to(message, "🔒 Bot is now in PRIVATE mode.")
+        logging.info(f"[Telegram] Owner {user_id} enabled PRIVATE mode.")
+    elif arg == "false":
+        bot_is_private = False
+        tb_bot.reply_to(message, "🔓 Bot is now in PUBLIC mode.")
+        logging.info(f"[Telegram] Owner {user_id} enabled PUBLIC mode.")
+    else:
+        tb_bot.reply_to(message, "Usage: /set_private [true|false]")
+
 @tb_bot.message_handler(func=lambda msg: msg.text.strip() == "/start_aiGF")
 def handle_start_deepseek(message):
     global deepseek_chat_active
     user_id = message.from_user.id
     
+    if bot_is_private and user_id != OWNER_ID:
+        tb_bot.reply_to(message, "🔒 机器人当前处于私有模式，仅管理员可用。")
+        return
+        
     with chat_lock:
         deepseek_chat_active.add(user_id)
     
@@ -451,10 +484,21 @@ def handle_weather(message):
 
 @tb_bot.message_handler(func=lambda msg: True)
 def handle_deepseek_chat(message):
-    if message.text.strip().startswith(('/start_aiGF', '/stop_aiGF')):
+    if message.text.strip().startswith(('/start_aiGF', '/stop_aiGF', '/set_private','/help')):
         return
     
     user_id = message.from_user.id
+    
+    # 私有模式检查（防止聊天中途切换模式）
+    if bot_is_private and user_id != OWNER_ID:
+        # 如果用户之前在活跃列表里，现在被踢出去了
+        with chat_lock:
+            if user_id in deepseek_chat_active:
+                deepseek_chat_active.discard(user_id)
+                proactive_scheduler.stop(user_id)
+                tb_bot.reply_to(message, "🔒 机器人已切换至私有模式，您的会话已结束。")
+        return
+
     with chat_lock:
         if user_id not in deepseek_chat_active:
             return

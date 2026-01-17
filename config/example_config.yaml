@@ -1,6 +1,9 @@
 telegram:
   # 你的 Telegram Bot Token，从 @BotFather 获取
   bot_token: "_Your_Telegram_Bot_Token_"
+  # 机器人的拥有者 ID（数字 ID），拥有最高权限（如切换私有模式）
+  # 可以通过 @userinfobot 获取你的 ID
+  owner_id: 123456789
 
 deepseek:
   # 你的 DeepSeek API Key

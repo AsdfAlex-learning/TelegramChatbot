@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 
 class TelegramConfig(BaseModel):
     bot_token: str = Field(..., description="Telegram Bot Token")
+    owner_id: int = Field(default=0, description="Owner Telegram User ID for absolute control")
 
 class DeepSeekConfig(BaseModel):
     api_key: str = Field(..., description="DeepSeek API Key")
