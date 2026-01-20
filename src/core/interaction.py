@@ -1,3 +1,9 @@
+"""
+文件职责：交互管理器
+处理与用户的直接交互逻辑，包括消息缓冲、输入节奏控制（防刷屏）、
+错误消息反馈以及最终的消息发送调度。
+"""
+
 import threading
 import time
 import random
@@ -18,40 +24,39 @@ class InteractionManager:
         self.config_loader = ConfigLoader()
         self.system_config = self.config_loader.system_config
         
-        # Buffer State
+        # 缓冲状态
         self.user_message_buffer: Dict[int, List[str]] = {}
         self.user_timers: Dict[int, threading.Timer] = {}
         self.buffer_lock = threading.Lock()
         
-        # Callback for sending messages (user_id, text) -> None
+        # 发送消息的回调函数 (user_id, text) -> None
         self.sender: Optional[Callable[[int, str], None]] = None
 
     def set_sender(self, sender_func: Callable[[int, str], None]):
         """
-        Set the callback function to send messages.
-        sender_func should handle the actual I/O (e.g., Telegram send).
+        设置发送消息的回调函数。
+        sender_func 应该处理实际的 I/O (例如 Telegram send)。
         """
         self.sender = sender_func
 
     def add_user_message(self, user_id: int, message_text: str):
         """
-        Add a user message to the buffer and schedule processing.
-        Includes permission check.
+        将用户消息添加到缓冲区并调度处理。
+        包含权限检查。
         """
         access = self.session_controller.can_continue_session(user_id)
         
         if access == AccessResult.DENIED_PRIVATE:
-            logging.info(f"[Interaction] Ignored message from {user_id} (Private Mode)")
-            # Optionally send a "system busy" or "unauthorized" message here if desired
-            # For now, we silent ignore or maybe notify once? 
-            # Given main.py delegates completely, we should probably reply if it's a hard deny
+            logging.info(f"[Interaction] 忽略来自 {user_id} 的消息 (私有模式)")
+            # 可选：如果需要，可以在这里发送“系统繁忙”或“无权访问”的消息
+            # 目前如果是硬拒绝，我们可能会回复一次
             if self.sender:
                 self.sender(user_id, "🔒 机器人处于私有模式，您无权访问。")
             return
             
         if access == AccessResult.DENIED_INACTIVE:
-            logging.info(f"[Interaction] Ignored message from {user_id} (Session Inactive)")
-            # Silent ignore for inactive sessions is standard behavior (don't reply to random messages)
+            logging.info(f"[Interaction] 忽略来自 {user_id} 的消息 (会话非活跃)")
+            # 对于非活跃会话，静默忽略是标准行为（不回复随机消息）
             return
 
         with self.buffer_lock:
@@ -59,18 +64,18 @@ class InteractionManager:
                 self.user_message_buffer[user_id] = []
             
             self.user_message_buffer[user_id].append(message_text)
-            logging.info(f"[Interaction] User {user_id} added message: {message_text} | Buffer size: {len(self.user_message_buffer[user_id])}")
+            logging.info(f"[Interaction] 用户 {user_id} 添加消息: {message_text} | 缓冲区大小: {len(self.user_message_buffer[user_id])}")
             
-            # Reset timer
+            # 重置计时器
             if user_id in self.user_timers:
                 self.user_timers[user_id].cancel()
             
-            # Get delay from config
+            # 从配置获取延迟
             try:
                 min_time = self.system_config.message_buffer.collect_min_time
                 max_time = self.system_config.message_buffer.collect_max_time
             except AttributeError:
-                # Fallback defaults
+                # 默认回退值
                 min_time = 1.0
                 max_time = 3.0
                 
@@ -80,11 +85,11 @@ class InteractionManager:
             timer.daemon = True
             timer.start()
             self.user_timers[user_id] = timer
-            logging.info(f"[Interaction] Scheduled processing for user {user_id} in {collect_time:.1f}s")
+            logging.info(f"[Interaction] 计划在 {collect_time:.1f}s 后处理用户 {user_id}")
 
     def clear_user_state(self, user_id: int):
         """
-        Clear buffer and timers for a user (e.g., when stopping chat).
+        清理用户的缓冲和计时器（例如停止聊天时）。
         """
         with self.buffer_lock:
             if user_id in self.user_message_buffer:
@@ -95,45 +100,45 @@ class InteractionManager:
 
     def _process_buffer(self, user_id: int):
         """
-        Process the buffered messages for a user.
+        处理用户缓冲区中的消息。
         """
         with self.buffer_lock:
-            # Remove timer from dict as it has triggered
+            # 从字典中移除计时器，因为它已经触发
             if user_id in self.user_timers:
                 del self.user_timers[user_id]
             
-            # Get and clear messages
+            # 获取并清除消息
             messages = self.user_message_buffer.get(user_id, [])
             if not messages:
                 return
             del self.user_message_buffer[user_id]
         
-        # Combine messages
+        # 合并消息
         full_text = "\n".join(messages)
-        logging.info(f"[Interaction] Processing buffered messages for {user_id}: {full_text[:50]}...")
+        logging.info(f"[Interaction] 正在处理 {user_id} 的缓冲消息: {full_text[:50]}...")
         
         try:
-            # Call ChatService
+            # 调用 ChatService
             response = self.chat_service.process_user_input(user_id, full_text)
             
-            # Split and Send
+            # 分割并发送
             self._send_response_chunks(user_id, response)
             
         except Exception as e:
-            logging.error(f"[Interaction] Error processing buffer for {user_id}: {e}")
+            logging.error(f"[Interaction] 处理 {user_id} 缓冲区时出错: {e}")
             if self.sender:
                 # 友好的错误提示，不暴露内部异常
                 self.sender(user_id, "⚠️ 抱歉，我现在有点晕，请稍后再试。")
 
     def _send_response_chunks(self, user_id: int, text: str):
         """
-        Split response by '$' or newline, and send chunks with delay.
+        通过 '$' 或换行符分割回复，并带延迟发送。
         """
         if not text:
             return
 
-        # Split logic: Priority to '$', then newlines
-        # The prompt usually instructs to use '$' for splitting
+        # 分割逻辑：优先使用 '$'，然后是换行符
+        # Prompt 通常指示使用 '$' 进行分割
         chunks = []
         if '$' in text:
             parts = text.split('$')
@@ -141,9 +146,7 @@ class InteractionManager:
                 if p.strip():
                     chunks.append(p.strip())
         else:
-            # Fallback to newline splitting if long? Or just send as is?
-            # User requirement mentioned "Split by $ split by \n" logic extraction.
-            # Let's support both.
+            # 如果没有 '$'，则回退到换行符分割
             lines = text.split('\n')
             for line in lines:
                 if line.strip():
@@ -152,14 +155,14 @@ class InteractionManager:
         if not chunks:
             chunks = [text]
 
-        # Send loop
+        # 发送循环
         for i, chunk in enumerate(chunks):
             if self.sender:
                 self.sender(user_id, chunk)
             
-            # Delay between chunks
+            # 块之间的延迟
             if i < len(chunks) - 1:
-                # Calculate reading time based on length?
-                # Simple logic: 0.5s + 0.05s per char, max 3s
+                # 简单的阅读时间计算：0.5s + 每个字符 0.05s，最长 3s
+                # TODO: 优化节奏控制算法，使其更自然
                 delay = min(3.0, 0.5 + len(chunk) * 0.05)
                 time.sleep(delay)

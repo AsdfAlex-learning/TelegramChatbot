@@ -1,25 +1,31 @@
+"""
+文件职责：系统配置模型
+定义了系统所有配置文件的 Pydantic 数据模型。
+包括 system.yaml, ai_rules.yaml, persona.yaml 等文件的结构验证。
+"""
+
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
 
-# ================== System Config Models (system.yaml) ==================
+# ================== 系统配置模型 (system.yaml) ==================
 
 class TelegramConfig(BaseModel):
-    bot_token: str = Field(..., description="Telegram Bot Token")
-    owner_id: int = Field(default=0, description="Owner Telegram User ID for absolute control")
+    bot_token: str = Field(..., description="Telegram 机器人的 Token")
+    owner_id: int = Field(default=0, description="拥有绝对控制权的 Owner ID")
 
 class LLMConfig(BaseModel):
-    api_key: str = Field(..., description="OpenAI Compatible API Key")
-    api_url: str = Field(default="https://api.deepseek.com/chat/completions", description="API URL")
-    model: str = Field(default="deepseek-chat", description="Model name")
-    temperature: float = Field(default=0.7, description="Sampling temperature")
-    max_tokens: int = Field(default=1024, description="Max tokens for response")
+    api_key: str = Field(..., description="OpenAI 兼容的 API Key")
+    api_url: str = Field(default="https://api.deepseek.com/chat/completions", description="API 地址")
+    model: str = Field(default="deepseek-chat", description="模型名称")
+    temperature: float = Field(default=0.7, description="采样温度")
+    max_tokens: int = Field(default=1024, description="回复最大 Token 数")
 
 class BotConfig(BaseModel):
-    private_mode_default: bool = Field(default=True, description="Default private mode state")
+    private_mode_default: bool = Field(default=True, description="默认私有模式状态")
 
 class MessageBufferConfig(BaseModel):
-    collect_min_time: int = Field(default=15, description="Min collection time (seconds)")
-    collect_max_time: int = Field(default=20, description="Max collection time (seconds)")
+    collect_min_time: int = Field(default=15, description="最小收集时间 (秒)")
+    collect_max_time: int = Field(default=20, description="最大收集时间 (秒)")
 
 class SystemConfig(BaseModel):
     telegram: TelegramConfig
@@ -27,15 +33,15 @@ class SystemConfig(BaseModel):
     bot: BotConfig = Field(default_factory=BotConfig)
     message_buffer: MessageBufferConfig = Field(default_factory=MessageBufferConfig)
 
-# ================== AI Rules Models (ai_rules.yaml) ==================
+# ================== AI 规则模型 (ai_rules.yaml) ==================
 
 class AIRulesConfig(BaseModel):
-    rules: List[str] = Field(default_factory=list, description="List of system-level AI rules")
+    rules: List[str] = Field(default_factory=list, description="系统级 AI 规则列表")
 
     def format(self) -> str:
         return "\n".join([f"- {rule}" for rule in self.rules])
 
-# ================== Persona Models (persona.yaml) ==================
+# ================== 人设模型 (persona.yaml) ==================
 
 class IdentityConfig(BaseModel):
     name: str
@@ -85,20 +91,19 @@ class PersonaSettings(BaseModel):
         return "\n".join(lines)
 
 class PersonaConfig(BaseModel):
-    # Allow dynamic keys for different personas, 'default' is required
+    # 允许动态键以支持不同的人设，'default' 是必须的
     default: PersonaSettings
     extra_personas: Dict[str, PersonaSettings] = Field(default_factory=dict)
 
     def __init__(self, **data):
-        # Handle 'default' explicitly, put others in extra_personas
+        # 显式处理 'default'，将其他放入 extra_personas
         default_data = data.pop('default', None)
         if default_data is None:
-             raise ValueError("persona.yaml must contain 'default' key")
+             raise ValueError("persona.yaml 必须包含 'default' 键")
         
         super().__init__(default=default_data, extra_personas=data)
 
-# ================== API Config Models ==================
+# ================== API 配置模型 ==================
 
 class GlobalAPIConfig(BaseModel):
     api_settings: Dict[str, Any] = Field(default_factory=dict)
-

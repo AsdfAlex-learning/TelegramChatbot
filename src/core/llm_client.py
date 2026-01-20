@@ -1,3 +1,9 @@
+"""
+文件职责：LLM 客户端
+负责与 OpenAI 兼容的 API 进行通信（如 DeepSeek, ChatGPT）。
+提供基础的对话补全功能，以及专门的工具函数（关键词提取、总结生成）。
+"""
+
 import requests
 import logging
 from typing import List, Dict, Optional, Any
@@ -20,7 +26,7 @@ class LLMClient:
 
     def chat_completion(self, messages: List[Dict[str, str]], temperature: Optional[float] = None, max_tokens: Optional[int] = None) -> str:
         """
-        Call the LLM Chat Completion API.
+        调用 LLM 对话补全 API。
         """
         data = {
             "model": self.model,
@@ -30,16 +36,17 @@ class LLMClient:
         }
 
         try:
+            # TODO: 添加重试机制和流式输出支持
             response = requests.post(self.api_url, headers=self._get_headers(), json=data, timeout=60)
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
-            logging.error(f"LLM API Call Failed: {e}")
+            logging.error(f"LLM API 调用失败: {e}")
             raise
 
     def extract_keywords(self, text: str) -> List[str]:
         """
-        Extract keywords from text using LLM.
+        使用 LLM 从文本中提取关键词。
         """
         messages = [
             {"role": "system", "content": "提取输入文本的核心关键词，用逗号分隔，不超过5个词。"},
@@ -53,7 +60,7 @@ class LLMClient:
 
     def generate_user_summary(self, memories: List[str]) -> str:
         """
-        Generate a summary of the user based on memories.
+        根据记忆生成用户摘要。
         """
         if not memories:
             return "用户信息加载中..."
@@ -65,19 +72,21 @@ class LLMClient:
         try:
             return self.chat_completion(messages, temperature=0.5, max_tokens=500)
         except Exception as e:
-            logging.error(f"Failed to generate user summary: {e}")
+            logging.error(f"生成用户摘要失败: {e}")
             return "用户信息加载中..."
 
     def extract_new_memories(self, conversation_text: str) -> List[tuple]:
         """
-        Extract new memories from conversation text.
-        Returns list of (event, keywords, importance, validity_days).
+        从对话文本中提取新记忆。
+        返回列表：(事件, 关键词, 重要度, 有效期)。
         """
         messages = [
-            {"role": "system", "content": """从对话中提取用户的重要信息，按格式返回：
-事件（YYYY-MM-DD + 具体事件）,关键词（逗号分隔）,重要度(0-100),有效期（天，365=永久）
-仅保留重要信息，普通闲聊忽略。
-"""},
+            {
+                "role": "system", "content": 
+                    """从对话中提取用户的重要信息，按格式返回：
+                        事件（YYYY-MM-DD + 具体事件）,关键词（逗号分隔）,重要度(0-100),有效期（天，365=永久）
+                        仅保留重要信息，普通闲聊忽略。
+                    """},
             {"role": "user", "content": conversation_text}
         ]
         
@@ -88,9 +97,9 @@ class LLMClient:
                 if line.strip():
                     parts = line.split(',')
                     if len(parts) >= 4:
-                        # Basic cleanup and validation could be added here
+                        # 简单的清理和验证
                         memories.append((parts[0].strip(), parts[1].strip(), int(parts[2].strip()), int(parts[3].strip())))
             return memories
         except Exception as e:
-            logging.error(f"Failed to extract new memories: {e}")
+            logging.error(f"提取新记忆失败: {e}")
             return []

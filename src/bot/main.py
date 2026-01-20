@@ -20,6 +20,7 @@ from src.core.api_registry import APIRegistry
 from src.bot.proactive_messaging import ProactiveScheduler
 from src.core.chat_service import ChatService
 from src.core.interaction import InteractionManager
+from src.core.proactive_service import ProactiveService
 
 from src.core.session_controller import SessionController, AccessResult
 
@@ -38,6 +39,7 @@ session_controller = SessionController(
 
 chat_service = ChatService(session_controller)
 interaction_manager = InteractionManager(chat_service, session_controller)
+proactive_service = ProactiveService(session_controller, chat_service)
 
 TELEGRAM_TOKEN = system_config.telegram.bot_token
 OWNER_ID = system_config.telegram.owner_id
@@ -68,13 +70,9 @@ interaction_manager.set_sender(lambda uid, txt: safe_send_message(uid, txt))
 
 # 初始化主动消息调度器
 proactive_scheduler = ProactiveScheduler(
-    tb_bot, 
-    system_config, 
-    session_controller,
-    config_loader.prompt_manager, 
-    chat_service.chat_contexts, 
-    chat_service.context_lock, 
-    chat_service.get_user_memory
+    proactive_service=proactive_service,
+    chat_service=chat_service,
+    sender=lambda uid, txt: safe_send_message(uid, txt)
 )
 
 

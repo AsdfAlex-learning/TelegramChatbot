@@ -1,3 +1,9 @@
+"""
+文件职责：API 注册表
+负责动态发现、加载和管理所有外部 API 服务（如天气、搜索等）。
+实现了自动发现机制，确保新添加的 API 模块能被系统识别。
+"""
+
 import importlib
 import os
 import inspect
@@ -37,11 +43,11 @@ class APIRegistry:
                             api_config = config_loader.get_config(item)
                             if api_config.get("enabled", False):
                                 self._apis[item] = obj(api_config)
-                                logging.info(f"Registered API: {item} ({name})")
+                                logging.info(f"已注册 API: {item} ({name})")
                             else:
-                                logging.info(f"Skipped disabled API: {item}")
+                                logging.info(f"跳过已禁用的 API: {item}")
                 except Exception as e:
-                    logging.error(f"Failed to register API from {item}: {e}")
+                    logging.error(f"从 {item} 注册 API 失败: {e}")
 
     def get_api(self, name):
         return self._apis.get(name)

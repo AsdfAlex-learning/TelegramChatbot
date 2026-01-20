@@ -1,14 +1,20 @@
+"""
+文件职责：记忆注入接口
+定义了结构化的记忆数据载体 (MemoryPayload) 和记忆管理接口 (MemoryManagerInterface)。
+确保所有进入长期记忆的数据（无论来源）都遵循统一的格式和追溯标准。
+"""
+
 from enum import Enum
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional
+from typing import List
 from abc import ABC, abstractmethod
 
 class MemorySource(Enum):
     """
-    Enumeration of valid memory sources.
+    有效记忆来源的枚举。
     
-    Ensures that the origin of every memory entry is traceable.
+    确保每个记忆条目的来源都是可追溯的。
     """
     TELEGRAM = "telegram"
     LIVE2D = "live2d"
@@ -17,56 +23,47 @@ class MemorySource(Enum):
 @dataclass
 class MemoryPayload:
     """
-    Data payload for injecting a new long-term memory summary.
+    用于注入新的长期记忆总结的数据载体。
     
-    This structure ensures that only summarized, structured data enters the memory system,
-    rather than raw chat logs.
-    
-    Attributes:
-        summary_text (str): The LLM-generated summary text.
-        keywords (List[str]): Key tags extracted from the interaction.
-        importance_score (float): A weight from 0.0 to 1.0 indicating memory retention priority.
-        related_context_ids (List[str/int]): IDs of the original messages/interactions that generated this summary.
-                                         Used for lineage and debugging.
-        source_platform (MemorySource): The platform where the interaction originated.
-        timestamp (datetime): The time when the memory was formed (usually now, or session end time).
+    此结构确保只有经过总结的结构化数据进入记忆系统，而不是原始聊天记录。
     """
-    summary_text: str
-    keywords: List[str]
-    importance_score: float
-    related_context_ids: List[str]  # Or int, depending on ID type
-    source_platform: MemorySource
-    timestamp: datetime
+    summary_text: str                                              # LLM 生成的纯文本总结
+    keywords: List[str]                                            # 从交互中提取的关键标签
+    importance_score: float                                        # 0.0 到 1.0 的权重，指示记忆保留的优先级
+    related_context_ids: List[str]                                 # 生成此总结的原始消息/交互的 ID (用于溯源)
+    source_platform: MemorySource                                  # 交互发生的来源平台
+    timestamp: datetime                                            # 记忆形成的时间 (通常是现在，或会话结束时间)
 
 class MemoryManagerInterface(ABC):
     """
-    Abstract Interface for the Memory Manager.
+    记忆管理器的抽象接口。
     
-    Defines the contract for interacting with the long-term memory store.
-    This interface ensures that external modules (like Live2D) or internal agents
-    adhere to the 'Ingest' protocol rather than writing directly to the DB.
+    定义了与长期记忆存储交互的契约。
+    此接口确保外部模块（如 Live2D）或内部代理遵守 'Ingest' 协议，
+    而不是直接写入数据库。
     """
 
     @abstractmethod
     def ingest_summary(self, user_id: int, payload: MemoryPayload) -> bool:
         """
-        The standard entry point for injecting long-term memory.
+        注入长期记忆的标准入口。
         
-        This method acts as a firewall for the memory database. It is responsible for:
-        1. Validating the payload (e.g., text is not empty, score is within range).
-        2. Performing de-duplication (e.g., vector similarity check).
-        3. Persisting the data to Vector Store and SQL Database.
-        4. Triggering any necessary cleanup or decay tasks.
+        此方法充当记忆数据库的防火墙。它负责：
+        1. 校验 payload 合法性 (例如：文本非空，分数在范围内)。
+        2. 执行去重检查 (例如：向量相似度对比)。
+        3. 将数据持久化到向量存储和 SQL 数据库。
+        4. 触发任何必要的清理或衰减任务。
         
-        Constraints:
-            - ONLY to be called by Core internal services (SummaryAgent, BackgroundWorker).
-            - External clients (Live2D) MUST NOT call this directly.
+        约束:
+            - 仅限 Core 内部服务调用 (SummaryAgent, BackgroundWorker)。
+            - 外部客户端 (Live2D) 绝对禁止直接调用此方法。
         
         Args:
-            user_id (int): The ID of the user who owns this memory.
-            payload (MemoryPayload): The structured memory data to ingest.
+            user_id (int): 拥有此记忆的用户 ID。
+            payload (MemoryPayload): 要注入的结构化记忆数据。
             
         Returns:
-            bool: True if ingestion was successful, False otherwise.
+            bool: 如果注入成功则返回 True，否则返回 False。
         """
+        # TODO: 实现具体的记忆注入逻辑 (SQLite/VectorDB)。
         pass
