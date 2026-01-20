@@ -9,13 +9,8 @@ from src.core.chat_service import ChatService
 from src.core.session_controller import SessionController, AccessResult
 
 class InteractionManager:
-    _instance = None
-
-    def __new__(cls, chat_service: ChatService, session_controller: SessionController):
-        if cls._instance is None:
-            cls._instance = super(InteractionManager, cls).__new__(cls)
-            cls._instance._initialize(chat_service, session_controller)
-        return cls._instance
+    def __init__(self, chat_service: ChatService, session_controller: SessionController):
+        self._initialize(chat_service, session_controller)
 
     def _initialize(self, chat_service: ChatService, session_controller: SessionController):
         self.chat_service = chat_service
@@ -127,7 +122,8 @@ class InteractionManager:
         except Exception as e:
             logging.error(f"[Interaction] Error processing buffer for {user_id}: {e}")
             if self.sender:
-                self.sender(user_id, "⚠️ 抱歉，处理您的消息时出现错误。")
+                # 友好的错误提示，不暴露内部异常
+                self.sender(user_id, "⚠️ 抱歉，我现在有点晕，请稍后再试。")
 
     def _send_response_chunks(self, user_id: int, text: str):
         """

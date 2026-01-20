@@ -10,13 +10,8 @@ from src.storage.memory import LongTermMemory
 from src.core.session_controller import SessionController
 
 class ChatService:
-    _instance = None
-
-    def __new__(cls, session_controller: SessionController):
-        if cls._instance is None:
-            cls._instance = super(ChatService, cls).__new__(cls)
-            cls._instance._initialize(session_controller)
-        return cls._instance
+    def __init__(self, session_controller: SessionController):
+        self._initialize(session_controller)
 
     def _initialize(self, session_controller: SessionController):
         self.config_loader = ConfigLoader()
@@ -108,7 +103,7 @@ class ChatService:
             )
         except Exception as e:
             logging.error(f"[ChatService] LLM Error: {e}")
-            return "Thinking failed..."
+            raise e
             
         # 5. Add response to context
         self.add_assistant_message_to_context(user_id, response)
