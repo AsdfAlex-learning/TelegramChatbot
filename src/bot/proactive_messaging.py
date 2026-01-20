@@ -3,16 +3,17 @@ import time
 import random
 import logging
 import requests
-from src.storage.memory import LongTermMemory
+from src.core.session_controller import SessionController, AccessResult
 
 class ProactiveScheduler:
-    def __init__(self, bot, config, prompt_manager, chat_context, context_lock, memory_provider):
+    def __init__(self, bot, config, session_controller, prompt_manager, chat_context, context_lock, memory_provider):
         self.bot = bot
         self.config = config
         self.prompt_manager = prompt_manager
         self.chat_context = chat_context
         self.context_lock = context_lock
         self.memory_provider = memory_provider
+        self.session_controller = session_controller
         
         # Standardize API Config (OpenAI Compatible)
         if hasattr(config, "llm"):
@@ -91,6 +92,11 @@ class ProactiveScheduler:
         with self.lock:
             if user_id in self.check_timers:
                 del self.check_timers[user_id]
+
+        # 权限/状态检查：必须在 ACTIVE 状态
+        if not self.session_controller.is_session_active(user_id):
+            logging.info(f"[Proactive] Cancelled for {user_id}: Session inactive")
+            return
 
         # 随机判定
         if random.random() > self.send_prob:

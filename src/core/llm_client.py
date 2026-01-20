@@ -1,0 +1,96 @@
+import requests
+import logging
+from typing import List, Dict, Optional, Any
+from src.core.config import SystemConfig
+
+class LLMClient:
+    def __init__(self, system_config: SystemConfig):
+        self.config = system_config
+        self.api_key = system_config.llm.api_key
+        self.api_url = system_config.llm.api_url
+        self.model = system_config.llm.model
+        self.temperature = system_config.llm.temperature
+        self.max_tokens = system_config.llm.max_tokens
+
+    def _get_headers(self) -> Dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+    def chat_completion(self, messages: List[Dict[str, str]], temperature: Optional[float] = None, max_tokens: Optional[int] = None) -> str:
+        """
+        Call the LLM Chat Completion API.
+        """
+        data = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature if temperature is not None else self.temperature,
+            "max_tokens": max_tokens if max_tokens is not None else self.max_tokens
+        }
+
+        try:
+            response = requests.post(self.api_url, headers=self._get_headers(), json=data, timeout=60)
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            logging.error(f"LLM API Call Failed: {e}")
+            raise
+
+    def extract_keywords(self, text: str) -> List[str]:
+        """
+        Extract keywords from text using LLM.
+        """
+        messages = [
+            {"role": "system", "content": "提取输入文本的核心关键词，用逗号分隔，不超过5个词。"},
+            {"role": "user", "content": text}
+        ]
+        try:
+            content = self.chat_completion(messages, temperature=0.3, max_tokens=100)
+            return [k.strip() for k in content.split(',') if k.strip()]
+        except Exception:
+            return text.split()[:5]
+
+    def generate_user_summary(self, memories: List[str]) -> str:
+        """
+        Generate a summary of the user based on memories.
+        """
+        if not memories:
+            return "用户信息加载中..."
+            
+        messages = [
+            {"role": "system", "content": "根据以下用户记忆，生成≤200字的USER_PROMPT，分核心层（永久属性）和动态层（临时事件）。核心层必加，动态层仅在相关时提及。"},
+            {"role": "user", "content": "\n".join(memories)}
+        ]
+        try:
+            return self.chat_completion(messages, temperature=0.5, max_tokens=500)
+        except Exception as e:
+            logging.error(f"Failed to generate user summary: {e}")
+            return "用户信息加载中..."
+
+    def extract_new_memories(self, conversation_text: str) -> List[tuple]:
+        """
+        Extract new memories from conversation text.
+        Returns list of (event, keywords, importance, validity_days).
+        """
+        messages = [
+            {"role": "system", "content": """从对话中提取用户的重要信息，按格式返回：
+事件（YYYY-MM-DD + 具体事件）,关键词（逗号分隔）,重要度(0-100),有效期（天，365=永久）
+仅保留重要信息，普通闲聊忽略。
+"""},
+            {"role": "user", "content": conversation_text}
+        ]
+        
+        try:
+            content = self.chat_completion(messages, temperature=0.3, max_tokens=1000)
+            memories = []
+            for line in content.split('\n'):
+                if line.strip():
+                    parts = line.split(',')
+                    if len(parts) >= 4:
+                        # Basic cleanup and validation could be added here
+                        memories.append((parts[0].strip(), parts[1].strip(), int(parts[2].strip()), int(parts[3].strip())))
+            return memories
+        except Exception as e:
+            logging.error(f"Failed to extract new memories: {e}")
+            return []
