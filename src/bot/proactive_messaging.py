@@ -1,10 +1,12 @@
 import threading
 import time
 import random
-import logging
 from typing import Callable, Dict, Optional
 from src.core.proactive_service import ProactiveService
 from src.core.chat_service import ChatService
+from src.core.logger import get_logger
+
+logger = get_logger("ProactiveScheduler")
 
 class ProactiveScheduler:
     """
@@ -36,6 +38,7 @@ class ProactiveScheduler:
 
     def start(self, user_id: int):
         """为用户启动调度器。"""
+        logger.info(f"[SCHEDULER] START | user_id: {user_id}")
         self.on_user_activity(user_id)
 
     def stop(self, user_id: int):
@@ -47,7 +50,7 @@ class ProactiveScheduler:
             if user_id in self.send_timers:
                 self.send_timers[user_id].cancel()
                 del self.send_timers[user_id]
-        logging.info(f"[ProactiveScheduler] 已停止用户 {user_id}")
+        logger.info(f"[SCHEDULER] STOP | user_id: {user_id}")
 
     def on_user_activity(self, user_id: int):
         """
@@ -57,7 +60,7 @@ class ProactiveScheduler:
         with self.lock:
             # 取消挂起的发送 (不要打断用户)
             if user_id in self.send_timers:
-                logging.info(f"[ProactiveScheduler] 用户 {user_id} 活跃，取消挂起的消息。")
+                logger.info(f"[SCHEDULER] CANCEL_SEND | user_id: {user_id} | reason: user_active")
                 self.send_timers[user_id].cancel()
                 del self.send_timers[user_id]
             
@@ -71,13 +74,15 @@ class ProactiveScheduler:
             timer.daemon = True
             timer.start()
             self.check_timers[user_id] = timer
-            logging.info(f"[ProactiveScheduler] 已调度 {user_id} 的下一次检查，在 {delay:.1f}s 后")
+            logger.info(f"[SCHEDULER] RESET | user_id: {user_id} | next_check_in: {delay:.1f}s")
 
     def _check_callback(self, user_id: int):
         """检查计时器的回调。"""
         with self.lock:
             if user_id in self.check_timers:
                 del self.check_timers[user_id]
+
+        logger.debug(f"[SCHEDULER] TRIGGER_CHECK | user_id: {user_id}")
 
         # 1. 询问 Core: 我们应该触发吗？
         if not self.proactive_service.should_trigger(user_id):
@@ -92,7 +97,7 @@ class ProactiveScheduler:
 
         # 3. 调度发送
         delay = random.uniform(self.send_delay_min, self.send_delay_max)
-        logging.info(f"[ProactiveScheduler] 正在调度发送给 {user_id}，在 {delay:.1f}s 后。内容: {content[:20]}...")
+        logger.info(f"[SCHEDULER] SCHEDULE_SEND | user_id: {user_id} | delay: {delay:.1f}s | content_len: {len(content)}")
         
         timer = threading.Timer(delay, self._execute_send, args=[user_id, content])
         timer.daemon = True
@@ -108,7 +113,7 @@ class ProactiveScheduler:
                 del self.send_timers[user_id]
         
         try:
-            logging.info(f"[ProactiveScheduler] Sending to {user_id}: {content}")
+            logger.info(f"[SCHEDULER] SEND | user_id: {user_id} | content_len: {len(content)}")
             
             # Use the injected sender (e.g., Telegram sender)
             if self.sender:
@@ -117,10 +122,10 @@ class ProactiveScheduler:
                 # Update Context (Core State)
                 self.chat_service.add_assistant_message_to_context(user_id, content)
             else:
-                logging.error("[ProactiveScheduler] No sender configured!")
+                logger.error("[SCHEDULER] SEND_FAIL | user_id: {user_id} | error: No sender configured")
                 
         except Exception as e:
-            logging.error(f"[ProactiveScheduler] Send failed: {e}")
+            logger.error(f"[SCHEDULER] SEND_FAIL | user_id: {user_id} | error: {e}", exc_info=True)
         
         # Reset loop
         self.on_user_activity(user_id)

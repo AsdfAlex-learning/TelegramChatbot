@@ -7,10 +7,12 @@
 import threading
 import time
 import random
-import logging
 from typing import Callable, List, Dict, Optional
 from src.core.config_loader import ConfigLoader
 from src.core.chat_service import ChatService
+from src.core.logger import get_logger
+
+logger = get_logger("InteractionManager")
 
 from src.core.session_controller import SessionController, AccessResult
 
@@ -47,7 +49,7 @@ class InteractionManager:
         access = self.session_controller.can_continue_session(user_id)
         
         if access == AccessResult.DENIED_PRIVATE:
-            logging.info(f"[Interaction] 忽略来自 {user_id} 的消息 (私有模式)")
+            logger.info(f"[INTERACTION] IGNORE | user_id: {user_id} | reason: private_mode")
             # 可选：如果需要，可以在这里发送“系统繁忙”或“无权访问”的消息
             # 目前如果是硬拒绝，我们可能会回复一次
             if self.sender:
@@ -55,7 +57,7 @@ class InteractionManager:
             return
             
         if access == AccessResult.DENIED_INACTIVE:
-            logging.info(f"[Interaction] 忽略来自 {user_id} 的消息 (会话非活跃)")
+            logger.info(f"[INTERACTION] IGNORE | user_id: {user_id} | reason: inactive")
             # 对于非活跃会话，静默忽略是标准行为（不回复随机消息）
             return
 
@@ -64,11 +66,13 @@ class InteractionManager:
                 self.user_message_buffer[user_id] = []
             
             self.user_message_buffer[user_id].append(message_text)
-            logging.info(f"[Interaction] 用户 {user_id} 添加消息: {message_text} | 缓冲区大小: {len(self.user_message_buffer[user_id])}")
+            current_size = len(self.user_message_buffer[user_id])
+            logger.info(f"[BUFFER] ADD | user_id: {user_id} | current_size: {current_size}")
             
             # 重置计时器
             if user_id in self.user_timers:
                 self.user_timers[user_id].cancel()
+                logger.debug(f"[TIMER] RESET | user_id: {user_id}")
             
             # 从配置获取延迟
             try:
@@ -85,7 +89,7 @@ class InteractionManager:
             timer.daemon = True
             timer.start()
             self.user_timers[user_id] = timer
-            logging.info(f"[Interaction] 计划在 {collect_time:.1f}s 后处理用户 {user_id}")
+            logger.info(f"[TIMER] SCHEDULE | user_id: {user_id} | delay: {collect_time:.1f}s")
 
     def clear_user_state(self, user_id: int):
         """
@@ -97,6 +101,7 @@ class InteractionManager:
             if user_id in self.user_timers:
                 self.user_timers[user_id].cancel()
                 del self.user_timers[user_id]
+            logger.info(f"[INTERACTION] CLEARED | user_id: {user_id}")
 
     def _process_buffer(self, user_id: int):
         """
@@ -115,7 +120,7 @@ class InteractionManager:
         
         # 合并消息
         full_text = "\n".join(messages)
-        logging.info(f"[Interaction] 正在处理 {user_id} 的缓冲消息: {full_text[:50]}...")
+        logger.info(f"[BUFFER] FLUSH | user_id: {user_id} | total_len: {len(full_text)}")
         
         try:
             # 调用 ChatService
@@ -125,7 +130,7 @@ class InteractionManager:
             self._send_response_chunks(user_id, response)
             
         except Exception as e:
-            logging.error(f"[Interaction] 处理 {user_id} 缓冲区时出错: {e}")
+            logger.error(f"[INTERACTION] ERROR | user_id: {user_id} | error: {e}", exc_info=True)
             if self.sender:
                 # 友好的错误提示，不暴露内部异常
                 self.sender(user_id, "⚠️ 抱歉，我现在有点晕，请稍后再试。")

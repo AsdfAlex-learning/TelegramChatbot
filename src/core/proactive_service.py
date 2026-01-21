@@ -5,12 +5,14 @@
 """
 
 from typing import Optional
-import logging
 import random
 from src.core.session_controller import SessionController
 from src.core.chat_service import ChatService
 from src.core.llm_client import LLMClient
 from src.core.config_loader import ConfigLoader
+from src.core.logger import get_logger
+
+logger = get_logger("ProactiveService")
 
 class ProactiveService:
     """
@@ -42,14 +44,15 @@ class ProactiveService:
         # 我们需要访问 session_controller 状态。
         # session_controller.active_chats 是单一事实来源。
         if user_id not in self.session_controller.active_chats:
-            logging.info(f"[ProactiveService] {user_id} 触发被拒绝: 会话非活跃")
+            logger.info(f"[POLICY] REJECT | user_id: {user_id} | reason: inactive_session")
             return False
         
         # 2. 随机概率检查
         if random.random() > self.send_prob:
-            logging.info(f"[ProactiveService] {user_id} 触发被拒绝: 概率检查未通过")
+            logger.info(f"[POLICY] REJECT | user_id: {user_id} | reason: probability_check_failed")
             return False
             
+        logger.info(f"[POLICY] ACCEPT | user_id: {user_id}")
         return True
 
     def generate_content(self, user_id: int) -> Optional[str]:
@@ -58,6 +61,8 @@ class ProactiveService:
         这不会更新上下文历史 (发送时更新)。
         """
         try:
+            logger.info(f"[AGENT] GEN_START | user_id: {user_id}")
+            
             # 1. 从 ChatService 获取上下文摘要和记忆
             # 我们需要 ChatService 提供一个公共方法。
             # 假设我们使用了 `_get_user_prompt_summary` (虽然是受保护的，但在 Python 中可以访问，建议后续公开化)
@@ -84,8 +89,10 @@ class ProactiveService:
                 messages=[{"role": "user", "content": final_prompt}]
             )
             
-            return response.strip()
+            content = response.strip()
+            logger.info(f"[AGENT] GEN_SUCCESS | user_id: {user_id} | len: {len(content)}")
+            return content
             
         except Exception as e:
-            logging.error(f"[ProactiveService] {user_id} 内容生成失败: {e}")
+            logger.error(f"[AGENT] GEN_FAIL | user_id: {user_id} | error: {e}", exc_info=True)
             return None

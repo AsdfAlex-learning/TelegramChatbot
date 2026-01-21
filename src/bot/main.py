@@ -4,25 +4,17 @@ import threading
 import telebot
 import requests
 import time
-import random
-import json
-import sys
-import sqlite3
-import csv
-import logging
-from datetime import datetime, timedelta
-from nonebot import on_command
-from nonebot.adapters import Message
-from nonebot.params import CommandArg
 from nonebot import get_driver
 from src.core.config_loader import ConfigLoader
-from src.core.api_registry import APIRegistry
 from src.bot.proactive_messaging import ProactiveScheduler
 from src.core.chat_service import ChatService
 from src.core.interaction import InteractionManager
 from src.core.proactive_service import ProactiveService
+from src.core.session_controller import SessionController
+from src.core.logger import get_logger
 
-from src.core.session_controller import SessionController, AccessResult
+# 初始化日志
+logger = get_logger("TelegramBot")
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -55,14 +47,12 @@ def safe_send_message(chat_id, text, max_attempts=3):
             return True
         except requests.exceptions.RequestException as e:
             if attempt == max_attempts - 1:
-                print(f"[Telegram] 发送失败（chat_id={chat_id}）：{e}")
-                logging.error(f"[Telegram] 发送失败（chat_id={chat_id}）：{e}")
+                logger.error(f"[TELEGRAM] SEND_FAIL | chat_id: {chat_id} | error: {e}")
                 return False
             time.sleep(backoff)
             backoff = min(backoff * 2, 10)
         except Exception as e:
-            print(f"[Telegram] 发送异常（chat_id={chat_id}）：{e}")
-            logging.error(f"[Telegram] 发送异常（chat_id={chat_id}）：{e}")
+            logger.error(f"[TELEGRAM] SEND_ERROR | chat_id: {chat_id} | error: {e}")
             return False
 
 # Register sender
@@ -86,8 +76,7 @@ def handle_help(message):
         "/help - 显示此帮助信息"
     )
     tb_bot.reply_to(message, help_text)
-    print(f"[Telegram] 用户 {message.from_user.id} 请求帮助")
-    logging.info(f"[Telegram] 用户 {message.from_user.id} 请求帮助")
+    logger.info(f"[TELEGRAM] HELP_REQUEST | user_id: {message.from_user.id}")
 
 
 @tb_bot.message_handler(func=lambda msg: msg.text.strip() == "/start_aiGF")
@@ -104,8 +93,7 @@ def handle_start_ai_chat(message):
     proactive_scheduler.start(user_id)
 
     tb_bot.reply_to(message, "✅ ai女友对话已开启！现在可以直接发送消息获取回复，输入/stop_aiGF关闭该模式。")
-    print(f"[Telegram] 用户 {user_id} 开启了DeepSeek对话模式")
-    logging.info(f"[Telegram] 用户 {user_id} 开启了DeepSeek对话模式")
+    logger.info(f"[TELEGRAM] SESSION_START | user_id: {user_id}")
 
 @tb_bot.message_handler(func=lambda msg: msg.text.strip() == "/stop_aiGF")
 def handle_stop_ai_chat(message):
@@ -119,28 +107,7 @@ def handle_stop_ai_chat(message):
     proactive_scheduler.stop(user_id)
 
     tb_bot.reply_to(message, "❌ ai女友对话模式已关闭！")
-    print(f"[Telegram] 用户 {user_id} 关闭了ai女友对话模式")
-    logging.info(f"[Telegram] 用户 {user_id} 关闭了ai女友对话模式")
-
-@tb_bot.message_handler(func=lambda msg: msg.text.strip().startswith("/weather"))
-def handle_weather(message):
-    try:
-        args = message.text.strip().split()
-        if len(args) < 2:
-            tb_bot.reply_to(message, "⚠️ 请输入城市名称，例如：/weather Beijing")
-            return
-        
-        city = args[1]
-        registry = APIRegistry()
-        weather_api = registry.get_api("weather")
-        
-        if weather_api:
-            result = weather_api.get_data(city)
-            tb_bot.reply_to(message, f"🌦️ {result}")
-        else:
-            tb_bot.reply_to(message, "⚠️ 天气服务未启用或不可用。")
-    except Exception as e:
-        tb_bot.reply_to(message, f"❌ 获取天气失败：{str(e)}")
+    logger.info(f"[TELEGRAM] SESSION_STOP | user_id: {user_id}")
 
 @tb_bot.message_handler(func=lambda msg: True)
 def handle_ai_chat(message):
@@ -162,8 +129,7 @@ def handle_ai_chat(message):
 
 # ====================== Telegram轮询线程 ======================
 def start_telegram_polling():
-    print("[Telegram] 机器人轮询已启动，等待消息")
-    logging.info("[Telegram] 机器人轮询已启动，等待消息")
+    logger.info("[TELEGRAM] POLLING_START")
     backoff = 1
     while True:
         try:
@@ -172,11 +138,9 @@ def start_telegram_polling():
         except requests.exceptions.ReadTimeout:
             continue
         except requests.exceptions.ConnectionError as e:
-            print(f"[Telegram] 轮询连接异常：{str(e)}")
-            logging.error(f"[Telegram] 轮询连接异常：{str(e)}")
+            logger.error(f"[TELEGRAM] POLLING_CONN_ERROR | error: {str(e)}")
         except Exception as e:
-            print(f"[Telegram] 轮询异常：{str(e)}")
-            logging.error(f"[Telegram] 轮询异常：{str(e)}")
+            logger.error(f"[TELEGRAM] POLLING_ERROR | error: {str(e)}")
         time.sleep(backoff)
         backoff = min(backoff * 2, 60)
 

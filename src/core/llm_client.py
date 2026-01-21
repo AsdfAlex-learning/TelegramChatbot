@@ -5,9 +5,12 @@
 """
 
 import requests
-import logging
+import time
 from typing import List, Dict, Optional, Any
 from src.core.config import SystemConfig
+from src.core.logger import get_logger
+
+logger = get_logger("LLMClient")
 
 class LLMClient:
     def __init__(self, system_config: SystemConfig):
@@ -35,13 +38,20 @@ class LLMClient:
             "max_tokens": max_tokens if max_tokens is not None else self.max_tokens
         }
 
+        start_time = time.time()
         try:
             # TODO: 添加重试机制和流式输出支持
             response = requests.post(self.api_url, headers=self._get_headers(), json=data, timeout=60)
             response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"].strip()
+            content = response.json()["choices"][0]["message"]["content"].strip()
+            
+            duration = time.time() - start_time
+            logger.info(f"[LLM] SUCCESS | model: {self.model} | duration: {duration:.2f}s | response_len: {len(content)}")
+            
+            return content
         except Exception as e:
-            logging.error(f"LLM API 调用失败: {e}")
+            duration = time.time() - start_time
+            logger.error(f"[LLM] FAILED | model: {self.model} | duration: {duration:.2f}s | error: {str(e)}", exc_info=True)
             raise
 
     def extract_keywords(self, text: str) -> List[str]:
@@ -54,8 +64,11 @@ class LLMClient:
         ]
         try:
             content = self.chat_completion(messages, temperature=0.3, max_tokens=100)
-            return [k.strip() for k in content.split(',') if k.strip()]
-        except Exception:
+            keywords = [k.strip() for k in content.split(',') if k.strip()]
+            logger.debug(f"[LLM] EXTRACT_KEYWORDS | count: {len(keywords)} | keywords: {keywords}")
+            return keywords
+        except Exception as e:
+            logger.warning(f"[LLM] EXTRACT_KEYWORDS_FAIL | error: {str(e)}")
             return text.split()[:5]
 
     def generate_user_summary(self, memories: List[str]) -> str:
@@ -70,9 +83,11 @@ class LLMClient:
             {"role": "user", "content": "\n".join(memories)}
         ]
         try:
-            return self.chat_completion(messages, temperature=0.5, max_tokens=500)
+            summary = self.chat_completion(messages, temperature=0.5, max_tokens=500)
+            logger.info(f"[LLM] GENERATE_SUMMARY | length: {len(summary)}")
+            return summary
         except Exception as e:
-            logging.error(f"生成用户摘要失败: {e}")
+            logger.error(f"[LLM] GENERATE_SUMMARY_FAIL | error: {str(e)}")
             return "用户信息加载中..."
 
     def extract_new_memories(self, conversation_text: str) -> List[tuple]:
@@ -99,7 +114,9 @@ class LLMClient:
                     if len(parts) >= 4:
                         # 简单的清理和验证
                         memories.append((parts[0].strip(), parts[1].strip(), int(parts[2].strip()), int(parts[3].strip())))
+            
+            logger.info(f"[LLM] EXTRACT_MEMORIES | count: {len(memories)}")
             return memories
         except Exception as e:
-            logging.error(f"提取新记忆失败: {e}")
+            logger.error(f"[LLM] EXTRACT_MEMORIES_FAIL | error: {str(e)}")
             return []

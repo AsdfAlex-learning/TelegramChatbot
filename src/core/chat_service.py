@@ -6,7 +6,6 @@
 
 import threading
 import time
-import logging
 from typing import Dict, Tuple, Set, Optional, List
 
 from src.core.config_loader import ConfigLoader
@@ -14,6 +13,9 @@ from src.core.context import ConversationContext
 from src.core.llm_client import LLMClient
 from src.storage.memory import LongTermMemory
 from src.core.session_controller import SessionController
+from src.core.logger import get_logger
+
+logger = get_logger("ChatService")
 
 class ChatService:
     def __init__(self, session_controller: SessionController):
@@ -41,6 +43,7 @@ class ChatService:
     def stop_chat(self, user_id: int):
         """停止聊天并清理资源。"""
         self.clean_resources(user_id)
+        logger.info(f"[CHAT] STOP | user_id: {user_id}")
 
     def clean_resources(self, user_id: int):
         """清理用户资源（会话停止时调用）。"""
@@ -53,6 +56,8 @@ class ChatService:
         with self.context_lock:
             if user_id in self.chat_contexts:
                 del self.chat_contexts[user_id]
+        
+        logger.debug(f"[RESOURCE] CLEAN | user_id: {user_id}")
 
     def get_context(self, user_id: int) -> ConversationContext:
         """获取或创建用户的对话上下文。"""
@@ -72,11 +77,13 @@ class ChatService:
         """将用户消息添加到上下文，但不触发回复。"""
         ctx = self.get_context(user_id)
         ctx.add_message("user", message)
+        logger.debug(f"[CONTEXT] ADD_USER | user_id: {user_id} | len: {len(message)}")
 
     def add_assistant_message_to_context(self, user_id: int, message: str):
         """将助手消息添加到上下文。"""
         ctx = self.get_context(user_id)
         ctx.add_message("assistant", message)
+        logger.debug(f"[CONTEXT] ADD_BOT | user_id: {user_id} | len: {len(message)}")
 
     def process_user_input(self, user_id: int, user_input: str) -> str:
         """
@@ -92,8 +99,12 @@ class ChatService:
         self.add_user_message_to_context(user_id, user_input)
         
         # 2. 准备上下文和记忆
-        conversation_str = self.get_context(user_id).format(exclude_last_n=1)
+        ctx = self.get_context(user_id)
+        conversation_str = ctx.format(exclude_last_n=1)
         user_summary = self._get_user_prompt_summary(user_id)
+        
+        # 记录上下文状态
+        logger.info(f"[CHAT] PROCESS | user_id: {user_id} | context_turns: {len(ctx.history)}")
         
         # 3. 构建 Prompt
         final_prompt = self.prompt_manager.build_prompt(
@@ -104,11 +115,16 @@ class ChatService:
         
         # 4. 调用 LLM
         try:
+            start_time = time.time()
             response = self.llm_client.chat_completion(
                 messages=[{"role": "user", "content": final_prompt}]
             )
+            duration = time.time() - start_time
+            logger.info(f"[LLM] SUCCESS | user_id: {user_id} | duration: {duration:.2f}s | response_len: {len(response)}")
         except Exception as e:
-            logging.error(f"[ChatService] LLM 错误: {e}")
+            logger.error(f"[LLM] FAILED | user_id: {user_id} | error: {e}")
+            # 这里可以添加回滚逻辑：如果 LLM 失败，是否应该移除最后一条用户消息？
+            # 目前策略：保留用户消息，但不添加 assistant 消息，用户可以重试
             raise e
             
         # 5. 添加回复到上下文
@@ -157,6 +173,7 @@ class ChatService:
             
         # 每 5 条消息提取一次
         if count % 5 == 0:
+            logger.info(f"[MEMORY] TRIGGER_EXTRACT | user_id: {user_id} | msg_count: {count}")
             # TODO: 实现真正的记忆提取逻辑
             # 这里应该调用 LLM 来提取事实，并使用 MemoryManager 存储
             # 建议使用异步任务来避免阻塞聊天
