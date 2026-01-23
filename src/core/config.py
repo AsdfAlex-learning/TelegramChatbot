@@ -27,11 +27,18 @@ class MessageBufferConfig(BaseModel):
     collect_min_time: int = Field(default=15, description="最小收集时间 (秒)")
     collect_max_time: int = Field(default=20, description="最大收集时间 (秒)")
 
+class ProactiveConfig(BaseModel):
+    check_interval_min: int = Field(default=1800, description="检查间隔最小值 (秒)")
+    check_interval_max: int = Field(default=7200, description="检查间隔最大值 (秒)")
+    send_delay_min: int = Field(default=60, description="发送延迟最小值 (秒)")
+    send_delay_max: int = Field(default=600, description="发送延迟最大值 (秒)")
+
 class SystemConfig(BaseModel):
     telegram: TelegramConfig
     llm: LLMConfig
     bot: BotConfig = Field(default_factory=BotConfig)
     message_buffer: MessageBufferConfig = Field(default_factory=MessageBufferConfig)
+    proactive: ProactiveConfig = Field(default_factory=ProactiveConfig)
 
 # ================== AI 规则模型 (ai_rules.yaml) ==================
 

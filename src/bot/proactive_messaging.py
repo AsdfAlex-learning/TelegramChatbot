@@ -30,11 +30,15 @@ class ProactiveScheduler:
         self.send_timers: Dict[int, threading.Timer] = {}
         self.lock = threading.Lock()
         
+        # 配置加载
+        self.config_loader = ConfigLoader()
+        self.system_config = self.config_loader.system_config
+        
         # 配置 (时间间隔)
-        self.check_interval_min = 1800  # 30 分钟
-        self.check_interval_max = 7200  # 2 小时
-        self.send_delay_min = 60        # 1 分钟
-        self.send_delay_max = 600       # 10 分钟
+        self.check_interval_min = self.system_config.proactive.check_interval_min
+        self.check_interval_max = self.system_config.proactive.check_interval_max
+        self.send_delay_min = self.system_config.proactive.send_delay_min
+        self.send_delay_max = self.system_config.proactive.send_delay_max
 
     def start(self, user_id: int):
         """为用户启动调度器。"""

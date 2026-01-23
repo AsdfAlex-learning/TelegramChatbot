@@ -15,3 +15,9 @@ llm:
 message_buffer:
   collect_min_time: 15
   collect_max_time: 20
+
+proactive:
+  check_interval_min: 1800
+  check_interval_max: 7200
+  send_delay_min: 60
+  send_delay_max: 600
