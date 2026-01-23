@@ -12,6 +12,8 @@ from src.core.interaction import InteractionManager
 from src.core.proactive_service import ProactiveService
 from src.core.session_controller import SessionController
 from src.core.logger import get_logger
+from src.core.component_system.base import ComponentContext
+from src.core.component_system.loader import ComponentLoader
 
 # 初始化日志
 logger = get_logger("TelegramBot")
@@ -64,6 +66,16 @@ proactive_scheduler = ProactiveScheduler(
     chat_service=chat_service,
     sender=lambda uid, txt: safe_send_message(uid, txt)
 )
+
+# ====================== 初始化组件系统 ======================
+component_context = ComponentContext(
+    bot=tb_bot,
+    session_controller=session_controller,
+    chat_service=chat_service,
+    interaction_manager=interaction_manager
+)
+component_loader = ComponentLoader(component_context)
+component_loader.load_all_components()
 
 
 # ====================== Telegram消息处理器 ======================
