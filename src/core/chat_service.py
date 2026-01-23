@@ -31,7 +31,7 @@ class ChatService:
         
         # 状态管理
         self.chat_contexts: Dict[int, ConversationContext] = {}
-        self.user_memories: Dict[int, LongTermMemory] = {}
+        self.user_memories: Dict[int, MemoryService] = {}
         self.user_prompt_cache: Dict[int, Tuple[str, float]] = {}
         self.user_message_counts: Dict[int, int] = {}
         
@@ -39,6 +39,12 @@ class ChatService:
         self.context_lock = threading.Lock()  # 用于 chat_contexts
         self.memory_lock = threading.Lock()   # 用于 user_memories
         self.state_lock = threading.Lock()    # 用于其他状态 (counts, cache)
+
+    def start_chat(self, user_id: int):
+        """开启聊天会话，初始化资源。"""
+        self.get_context(user_id)
+        self.get_user_memory(user_id)
+        logger.info(f"[CHAT] START | user_id: {user_id}")
 
     def stop_chat(self, user_id: int):
         """停止聊天并清理资源。"""
@@ -66,11 +72,11 @@ class ChatService:
                 self.chat_contexts[user_id] = ConversationContext()
             return self.chat_contexts[user_id]
 
-    def get_user_memory(self, user_id: int) -> LongTermMemory:
+    def get_user_memory(self, user_id: int) -> MemoryService:
         """获取或创建用户的长期记忆实例。"""
         with self.memory_lock:
             if user_id not in self.user_memories:
-                self.user_memories[user_id] = LongTermMemory(user_id)
+                self.user_memories[user_id] = MemoryService(user_id)
             return self.user_memories[user_id]
 
     def add_user_message_to_context(self, user_id: int, message: str):

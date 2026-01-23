@@ -5,6 +5,7 @@ from typing import Callable, Dict, Optional
 from src.core.proactive_service import ProactiveService
 from src.core.chat_service import ChatService
 from src.core.logger import get_logger
+from src.core.config_loader import ConfigLoader
 
 logger = get_logger("ProactiveScheduler")
 

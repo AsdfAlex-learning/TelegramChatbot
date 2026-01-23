@@ -1,0 +1,31 @@
+name: telegram_chatbot
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - pytorch
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.4  # 修正：推荐使用 12.4，配合 4060Ti 很稳定。13.x 目前 PyTorch 支持尚不完善。
+  - pip:
+    # Telegram & HTTP
+    - pyTelegramBotAPI>=4.9.0
+    - requests>=2.28.0
+
+    # Web服务 & 监控
+    - fastapi
+    - uvicorn
+    - mlflow
+
+    # HuggingFace & LLM 工具链
+    - transformers
+    - accelerate
+    - datasets
+    - peft
+    - bitsandbytes    # 注意：Windows 下可能需要特定版本，如果安装失败请尝试 bitsandbytes-windows
+    - sentencepiece
+    - safetensors
