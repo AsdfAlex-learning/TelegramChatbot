@@ -11,7 +11,7 @@ from typing import Dict, Tuple, Set, Optional, List
 from src.core.config_loader import ConfigLoader
 from src.core.context import ConversationContext
 from src.core.llm_client import LLMClient
-from src.storage.memory import LongTermMemory
+from src.core.memory.service import MemoryService
 from src.core.session_controller import SessionController
 from src.core.logger import get_logger
 
@@ -149,8 +149,8 @@ class ChatService:
                 pass 
 
         # 加载记忆
-        memory = self.get_user_memory(user_id)
-        valid_memories = memory.load_valid_memories()
+        memory_service = self.get_user_memory(user_id)
+        valid_memories = memory_service.get_relevant_memories()
         
         if not valid_memories:
             return "暂无特殊记忆"
