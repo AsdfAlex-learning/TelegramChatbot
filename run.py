@@ -1,55 +1,27 @@
-import os
 import sys
-import logging
-from logging.handlers import TimedRotatingFileHandler
+import os
+import nonebot
 
+# 1. 确保项目根目录在 PYTHONPATH 中
+# 这样可以确保 import src.xxx 始终有效，无论从哪里运行此脚本
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
-def setup_logging():
-    project_root = os.path.dirname(os.path.abspath(__file__))
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
-    log_dir = os.path.join(project_root, "logs")
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "bot_log.txt")
+from src.core.logger import get_logger
 
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+# 2. 引入 Bot 的核心逻辑
+# 这会触发 wiring(组装)、handlers(注册)、polling(钩子) 的加载
+import src.bot.main
 
-    if not any(isinstance(h, TimedRotatingFileHandler) and getattr(h, "baseFilename", "") == os.path.abspath(log_file) for h in logger.handlers):
-        file_handler = TimedRotatingFileHandler(
-            log_file,
-            when="midnight",
-            interval=1,
-            backupCount=0,
-            encoding="utf-8",
-        )
-        file_handler.suffix = "%Y-%m-%d.txt"
-        formatter = logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-
-    if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
-        console_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-        logger.addHandler(console_handler)
-
-
-def main():
-    setup_logging()
-    logging.info("程序启动")
-    try:
-        from src.bot.main import nonebot
-        nonebot.run()
-    except Exception:
-        logging.exception("运行过程中出现未捕获异常")
-        raise
-
+logger = get_logger("Entry")
 
 if __name__ == "__main__":
-    main()
-
-
+    logger.info("🚀 正在启动 Telegram Chatbot...")
+    try:
+        # 3. 启动 NoneBot 框架
+        # 这会接管主线程，并触发 driver.on_startup 钩子
+        nonebot.run()
+    except Exception as e:
+        logger.error(f"❌ 程序运行崩溃: {e}")
+        raise
