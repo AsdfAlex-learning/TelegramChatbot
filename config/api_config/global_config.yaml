@@ -1,6 +1,1 @@
-api_settings:
-  weather:
-    enabled: true
-    api_key: "your_weather_api_key"
-    base_url: "https://api.weather.com/v3"
-    timeout: 10
+api_settings: {}
