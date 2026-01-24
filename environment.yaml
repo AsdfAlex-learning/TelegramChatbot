@@ -29,3 +29,9 @@ dependencies:
     - bitsandbytes    # 注意：Windows 下可能需要特定版本，如果安装失败请尝试 bitsandbytes-windows
     - sentencepiece
     - safetensors
+    
+    # OpenCompass 评测
+    - opencompass
+    - mmengine
+    - mmcv>=2.0.0
+    - protobuf
