@@ -11,6 +11,10 @@ from pathlib import Path
 # 添加项目根目录到 sys.path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
+from src.core.config_loader import ConfigLoader
+from src.core.utils import get_clean_api_base
+from src.llm_system.monitor.ui_launcher import launch_mlflow_ui
+
 def simulate_conversation(
     client_local: OpenAI, 
     client_simulator: OpenAI, 
@@ -103,6 +107,9 @@ def simulate_conversation(
     return dialogue_data
 
 if __name__ == "__main__":
+    # 启动 MLflow UI
+    launch_mlflow_ui()
+
     # 加载系统配置
     config_loader = ConfigLoader()
     llm_config = config_loader.system_config.llm

@@ -49,6 +49,9 @@ def rerun_evaluation(
     return eval_output
 
 if __name__ == "__main__":
+    # 启动 MLflow UI
+    launch_mlflow_ui()
+
     # 加载系统配置
     config_loader = ConfigLoader()
     llm_config = config_loader.system_config.llm

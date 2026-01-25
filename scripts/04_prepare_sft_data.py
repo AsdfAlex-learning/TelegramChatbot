@@ -2,7 +2,13 @@ import json
 import argparse
 import mlflow
 import os
+import sys
 from pathlib import Path
+
+# 添加项目根目录到 sys.path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+from src.llm_system.monitor.ui_launcher import launch_mlflow_ui
 
 def prepare_sft_data(input_file: str, output_file: str, min_score: float = 4.0):
     """
@@ -46,6 +52,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     
+    # 启动 MLflow UI
+    launch_mlflow_ui()
+
     mlflow.set_experiment(args.experiment_name)
     with mlflow.start_run(run_name="prepare_sft_data") as run:
         count = prepare_sft_data(args.input_file, args.output_file, args.min_score)

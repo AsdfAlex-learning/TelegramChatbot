@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from src.llm_system.train.trainer import LLMTrainer
+from src.llm_system.monitor.ui_launcher import launch_mlflow_ui
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="执行 LoRA 微调")
@@ -19,6 +20,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     
+    # 启动 MLflow UI
+    launch_mlflow_ui()
+
     # 确保 MLflow 在同一实验下记录
     mlflow.set_experiment(args.experiment_name)
     

@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from src.llm_system.monitor.mlflow_logger import MLflowLogger
+from src.llm_system.monitor.ui_launcher import launch_mlflow_ui
 
 def start_server(host: str, port: int, model_path: str, use_4bit: bool):
     """
@@ -57,6 +58,9 @@ if __name__ == "__main__":
     parser.add_argument("--experiment_name", type=str, default="LLM_Bootstrap", help="MLflow 实验名称")
     
     args = parser.parse_args()
+
+    # 启动 MLflow UI
+    launch_mlflow_ui()
 
     # 初始化 MLflow
     logger = MLflowLogger()

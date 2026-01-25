@@ -8,9 +8,11 @@ bot:
 llm:
   api_key: "_Your_OpenAI_Compatible_API_Key_"
   api_url: "https://api.openai.com/v1/chat/completions"
-  model: "gpt-3.5-turbo"
+  model: "deepseek-chat"
   temperature: 0.7
   max_tokens: 1024
+  use_local_api: false
+  local_api_url: "http://localhost:8000/v1/chat/completions"
 
 message_buffer:
   collect_min_time: 15

@@ -19,6 +19,8 @@ class LLMConfig(BaseModel):
     model: str = Field(default="deepseek-chat", description="模型名称")
     temperature: float = Field(default=0.7, description="采样温度")
     max_tokens: int = Field(default=1024, description="回复最大 Token 数")
+    use_local_api: bool = Field(default=False, description="是否使用本地 API")
+    local_api_url: str = Field(default="http://localhost:8000/v1/chat/completions", description="本地 API 地址")
 
 class BotConfig(BaseModel):
     private_mode_default: bool = Field(default=True, description="默认私有模式状态")

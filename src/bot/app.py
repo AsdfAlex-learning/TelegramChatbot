@@ -3,6 +3,7 @@ from src.core.session_controller import SessionController
 from src.core.chat_service import ChatService
 from src.core.interaction import InteractionManager
 from src.bot.proactive_messaging import ProactiveScheduler
+from src.llm_system.local_api_caller import call_local_llm
 
 logger = get_logger("BotApplication")
 
@@ -51,6 +52,18 @@ class BotApplication:
     def handle_user_message(self, user_id: int, user_input: str) -> str:
         if not user_input:
             return "⚠️ 消息内容不能为空，请重新输入！"
+
+        # 检查是否开启本地 API 模式
+        llm_config = self.chat_service.system_config.llm
+        if llm_config.use_local_api:
+            logger.info(f"[APP] Local API Mode | user_id: {user_id}")
+            return call_local_llm(
+                message=user_input,
+                api_url=llm_config.local_api_url,
+                model="local-model", # 或者使用 llm_config.model
+                temperature=llm_config.temperature,
+                max_tokens=llm_config.max_tokens
+            )
 
         # 重置主动消息计时器
         self.proactive_scheduler.on_user_activity(user_id)
