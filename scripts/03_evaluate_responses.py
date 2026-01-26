@@ -89,8 +89,8 @@ if __name__ == "__main__":
     parser.add_argument("--judge_api_base", type=str, default=default_api_base, help="裁判 API 地址 (默认从 config 读取)")
     parser.add_argument("--judge_api_key", type=str, default=default_api_key, help="裁判 API Key (默认从 config 读取)")
     parser.add_argument("--judge_model", type=str, default=default_model, help="裁判模型名称 (默认从 config 读取)")
-    parser.add_argument("--input_file", type=str, default="simulation_data.json", help="输入数据文件")
-    parser.add_argument("--output_file", type=str, default="evaluation_results.json", help="输出结果文件")
+    parser.add_argument("--input_file", type=str, default="data/simulations/simulation_data.json", help="输入数据文件")
+    parser.add_argument("--output_file", type=str, default="data/evaluations/evaluation_results.json", help="输出结果文件")
     parser.add_argument("--experiment_name", type=str, default="LLM_Bootstrap", help="MLflow 实验名称")
 
     args = parser.parse_args()

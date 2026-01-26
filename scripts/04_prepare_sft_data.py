@@ -45,8 +45,8 @@ def prepare_sft_data(input_file: str, output_file: str, min_score: float = 4.0):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="准备 SFT 训练数据")
-    parser.add_argument("--input_file", type=str, default="evaluation_results.json", help="评测结果文件")
-    parser.add_argument("--output_file", type=str, default="sft_train.jsonl", help="输出 SFT 数据文件")
+    parser.add_argument("--input_file", type=str, default="data/evaluations/evaluation_results.json", help="评测结果文件")
+    parser.add_argument("--output_file", type=str, default="data/sft/sft_train.jsonl", help="输出 SFT 数据文件")
     parser.add_argument("--min_score", type=float, default=4.0, help="最低分数阈值")
     parser.add_argument("--experiment_name", type=str, default="LLM_Bootstrap", help="MLflow 实验名称")
 

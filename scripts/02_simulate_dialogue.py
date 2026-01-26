@@ -4,6 +4,7 @@ import argparse
 import mlflow
 import json
 import time
+import glob
 from typing import List, Dict
 from openai import OpenAI
 from pathlib import Path
@@ -21,6 +22,7 @@ def simulate_conversation(
     simulator_model: str, 
     local_model: str,
     topics: List[str],
+    local_system_prompt: str,
     turns: int = 5
 ):
     """
@@ -39,8 +41,8 @@ def simulate_conversation(
         请保持对话自然，每次只说一句话。
         """
         
-        # 本地模型的 System Prompt (假设在 server 端配置，或者通过 API 传递)
-        local_system_prompt = "你是一个乐于助人的 AI 助手。"
+        # 本地模型的 System Prompt (使用传入的配置)
+        # local_system_prompt 已作为参数传入
         
         history_local = [{"role": "system", "content": local_system_prompt}]
         history_simulator = [{"role": "system", "content": simulator_system_prompt}]
@@ -125,8 +127,9 @@ if __name__ == "__main__":
     parser.add_argument("--simulator_api_key", type=str, default=default_api_key, help="模拟器 API Key (默认从 config 读取)")
     parser.add_argument("--simulator_model", type=str, default=default_model, help="模拟器模型名称 (默认从 config 读取)")
     parser.add_argument("--local_model", type=str, default="local-model", help="本地模型名称")
-    parser.add_argument("--output_file", type=str, default="simulation_data.json", help="输出文件路径")
+    parser.add_argument("--output_file", type=str, default="data/simulations/simulation_data.json", help="输出文件路径")
     parser.add_argument("--experiment_name", type=str, default="LLM_Bootstrap", help="MLflow 实验名称")
+    parser.add_argument("--topics_dir", type=str, default="data/topics", help="话题文件目录")
 
     args = parser.parse_args()
     
@@ -134,22 +137,48 @@ if __name__ == "__main__":
     client_local = OpenAI(base_url=args.local_api_base, api_key=args.local_api_key)
     client_simulator = OpenAI(base_url=args.simulator_api_base, api_key=args.simulator_api_key)
     
-    # 模拟话题
-    topics = [
-        "Python 编程中的装饰器",
-        "如何制作红烧肉",
-        "解释量子纠缠",
-        "推荐几本好看的科幻小说"
-    ]
+    # 加载话题
+    topics = []
+    if os.path.exists(args.topics_dir):
+        topic_files = glob.glob(os.path.join(args.topics_dir, "*.txt"))
+        for topic_file in topic_files:
+            try:
+                with open(topic_file, "r", encoding="utf-8") as f:
+                    file_topics = [line.strip() for line in f if line.strip()]
+                    topics.extend(file_topics)
+                print(f"从 {topic_file} 加载了 {len(file_topics)} 个话题")
+            except Exception as e:
+                print(f"无法读取话题文件 {topic_file}: {e}")
+    else:
+        print(f"话题目录 {args.topics_dir} 不存在，使用默认话题")
+        topics = [
+            "Python 编程中的装饰器",
+            "如何制作红烧肉",
+            "解释量子纠缠",
+            "推荐几本好看的科幻小说"
+        ]
+    
+    if not topics:
+         print("警告: 未找到任何话题，使用默认话题")
+         topics = ["你好", "介绍一下你自己"]
+
+    # 构建本地模型的 System Prompt (基于项目配置)
+    prompt_manager = config_loader.prompt_manager
+    local_system_prompt = f"{prompt_manager.ai_rules.format()}\n\n{prompt_manager.persona.format()}"
+    print(f"已加载本地模型 System Prompt，长度: {len(local_system_prompt)}")
     
     mlflow.set_experiment(args.experiment_name)
     with mlflow.start_run(run_name="simulate_dialogue") as run:
+        # 记录 System Prompt 到 MLflow
+        mlflow.log_text(local_system_prompt, "local_system_prompt.txt")
+
         data = simulate_conversation(
             client_local, 
             client_simulator, 
             args.simulator_model, 
             args.local_model, 
-            topics
+            topics,
+            local_system_prompt
         )
         
         # 保存数据

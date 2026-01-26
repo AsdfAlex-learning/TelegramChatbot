@@ -12,7 +12,7 @@ from src.llm_system.monitor.ui_launcher import launch_mlflow_ui
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="执行 LoRA 微调")
     parser.add_argument("--model_path", type=str, required=True, help="基础模型路径")
-    parser.add_argument("--data_path", type=str, default="sft_train.jsonl", help="训练数据路径")
+    parser.add_argument("--data_path", type=str, default="data/sft/sft_train.jsonl", help="训练数据路径")
     parser.add_argument("--output_dir", type=str, default="checkpoints/lora_v1", help="检查点输出目录")
     parser.add_argument("--experiment_name", type=str, default="LLM_Bootstrap", help="MLflow 实验名称")
     parser.add_argument("--epochs", type=int, default=3, help="训练轮数")

@@ -7,6 +7,9 @@ from pathlib import Path
 # 添加项目根目录到 sys.path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
+from src.core.config_loader import ConfigLoader
+from src.llm_system.monitor.ui_launcher import launch_mlflow_ui
+
 def rerun_evaluation(
     model_path: str,
     simulator_api_key: str,
@@ -27,7 +30,7 @@ def rerun_evaluation(
     print("本脚本仅演示重新运行模拟和评测流程。")
     
     # 2. 运行模拟
-    sim_output = f"{output_prefix}_simulation.json"
+    sim_output = f"data/simulations/{output_prefix}_simulation.json"
     print("正在运行模拟对话...")
     subprocess.run([
         python_exe, "scripts/02_simulate_dialogue.py",
@@ -37,7 +40,7 @@ def rerun_evaluation(
     ], check=True)
     
     # 3. 运行评测
-    eval_output = f"{output_prefix}_evaluation.json"
+    eval_output = f"data/evaluations/{output_prefix}_evaluation.json"
     print("正在运行评测...")
     subprocess.run([
         python_exe, "scripts/03_evaluate_responses.py",
