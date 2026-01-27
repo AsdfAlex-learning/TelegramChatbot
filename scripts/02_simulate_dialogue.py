@@ -33,7 +33,8 @@ def simulate_conversation(
     for topic in topics:
         print(f"--- 开始模拟话题: {topic} ---")
         
-        # 模拟器的 System Prompt
+        # [PROMPT] AI Service Provider (Simulator) - System Prompt
+        # 这里定义了模拟器（通常是高性能 AI 服务商模型，如 DeepSeek/OpenAI）的角色
         simulator_system_prompt = f"""
         你是一个好奇的用户，正在与一个 AI 助手进行对话。
         当前的话题是：{topic}。
@@ -47,6 +48,7 @@ def simulate_conversation(
         history_local = [{"role": "system", "content": local_system_prompt}]
         history_simulator = [{"role": "system", "content": simulator_system_prompt}]
         
+        # [API CALL] AI Service Provider (Simulator)
         # 模拟器先发起话题
         simulator_response = client_simulator.chat.completions.create(
             model=simulator_model,
@@ -90,6 +92,8 @@ def simulate_conversation(
             
             # 2. 模拟器生成下一句追问
             try:
+                # [API CALL] AI Service Provider (Simulator)
+                # 调用模拟器生成用户的追问
                 simulator_response = client_simulator.chat.completions.create(
                     model=simulator_model,
                     messages=history_simulator
@@ -129,7 +133,8 @@ if __name__ == "__main__":
     parser.add_argument("--local_model", type=str, default="local-model", help="本地模型名称")
     parser.add_argument("--output_file", type=str, default="data/simulations/simulation_data.json", help="输出文件路径")
     parser.add_argument("--experiment_name", type=str, default="LLM_Bootstrap", help="MLflow 实验名称")
-    parser.add_argument("--topics_dir", type=str, default="data/topics", help="话题文件目录")
+    parser.add_argument("--topic_file", type=str, default="data/topics/topics_zh_general.txt", help="单个话题文件路径 (默认)")
+    parser.add_argument("--topics_dir", type=str, default=None, help="话题文件目录 (若指定则加载目录下所有txt，覆盖单个文件设置)")
 
     args = parser.parse_args()
     
@@ -139,7 +144,8 @@ if __name__ == "__main__":
     
     # 加载话题
     topics = []
-    if os.path.exists(args.topics_dir):
+    if args.topics_dir and os.path.exists(args.topics_dir):
+        print(f"从目录加载话题: {args.topics_dir}")
         topic_files = glob.glob(os.path.join(args.topics_dir, "*.txt"))
         for topic_file in topic_files:
             try:
@@ -149,8 +155,16 @@ if __name__ == "__main__":
                 print(f"从 {topic_file} 加载了 {len(file_topics)} 个话题")
             except Exception as e:
                 print(f"无法读取话题文件 {topic_file}: {e}")
+    elif args.topic_file and os.path.exists(args.topic_file):
+        print(f"加载单个话题文件: {args.topic_file}")
+        try:
+            with open(args.topic_file, "r", encoding="utf-8") as f:
+                topics = [line.strip() for line in f if line.strip()]
+            print(f"加载了 {len(topics)} 个话题")
+        except Exception as e:
+             print(f"无法读取话题文件 {args.topic_file}: {e}")
     else:
-        print(f"话题目录 {args.topics_dir} 不存在，使用默认话题")
+        print(f"未指定有效的话题文件或目录，使用默认硬编码话题")
         topics = [
             "Python 编程中的装饰器",
             "如何制作红烧肉",

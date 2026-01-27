@@ -36,7 +36,8 @@ def evaluate_responses(
             user_input = turn["user"]
             assistant_output = turn["assistant"]
             
-            # 构造评测 Prompt
+            # [PROMPT] AI Service Provider (Judge) - Evaluation Prompt
+            # 构造评测 Prompt，发送给高性能模型（如 DeepSeek/OpenAI）进行打分
             prompt = f"""
             请作为一位公正的裁判，评估以下 AI 助手的回答质量。
             
@@ -52,6 +53,8 @@ def evaluate_responses(
             """
             
             try:
+                # [API CALL] AI Service Provider (Judge)
+                # 调用裁判模型获取评分
                 response = client_judge.chat.completions.create(
                     model=judge_model,
                     messages=[{"role": "user", "content": prompt}],
