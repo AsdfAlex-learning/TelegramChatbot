@@ -67,6 +67,27 @@ def evaluate_responses(
                 evaluated_item = turn.copy()
                 evaluated_item["scores"] = score_json
                 evaluated_item["topic"] = topic
+                
+                # [SAFETY] Safety Module Hook
+                # 预留安全模块接口，未来可在此处集成自动安全检测逻辑
+                # 目前默认为 "unknown"，后续可扩展为 "safe", "unsafe", "sensitive" 等
+                evaluated_item["safety_flag"] = "unknown"
+                
+                # [TODO: Integration] Automated Security Evaluation
+                # ------------------------------------------------------------
+                # from src.security import OutputGuard, SecurityPolicy
+                #
+                # output_guard = OutputGuard()
+                # policy = SecurityPolicy.default() # Or use a stricter evaluation policy
+                #
+                # # Run security check on the generated response
+                # sec_result = output_guard.check_output(assistant_output, policy)
+                #
+                # # Update safety_flag based on actual decision
+                # evaluated_item["safety_flag"] = sec_result.decision.name
+                # evaluated_item["security_metadata"] = sec_result.to_dict()
+                # ------------------------------------------------------------
+                
                 evaluated_data.append(evaluated_item)
                 
                 print(f"Scores: {score_json}")

@@ -65,6 +65,30 @@ def simulate_conversation(
             "turns": []
         }
         
+        # [TODO: Integration] Security & Skills Module Integration Point
+        # ------------------------------------------------------------
+        # from src.security import InputGuard, SecurityPolicy, SafetyDecision
+        # from src.skills import RouterHelper
+        #
+        # 1. Initialize Guards (once outside loop)
+        # policy = SecurityPolicy.default()
+        # input_guard = InputGuard()
+        #
+        # 2. Input Guard Check
+        # security_result = input_guard.check_input(user_input, policy)
+        # if security_result.decision == SafetyDecision.DENY:
+        #     assistant_output = "Sorry, I cannot handle this request due to safety policy."
+        #     # Skip LLM generation
+        #
+        # 3. Skill Routing
+        # skill_name = RouterHelper.match_intent(user_input) # Needs intent recognition first
+        # if skill_name:
+        #     success, skill_result = RouterHelper.dispatch(skill_name, context)
+        #     if success:
+        #         assistant_output = skill_result["display_text"]
+        #         # Skip LLM generation
+        # ------------------------------------------------------------
+
         for _ in range(turns):
             # 1. 本地模型生成回答
             start_time = time.time()
@@ -79,6 +103,19 @@ def simulate_conversation(
                 break
             latency = time.time() - start_time
             print(f"AI (Local): {assistant_output}")
+            
+            # [TODO: Integration] Output Guard Check
+            # ------------------------------------------------------------
+            # from src.security import OutputGuard
+            # output_guard = OutputGuard()
+            #
+            # out_result = output_guard.check_output(assistant_output, policy)
+            # if out_result.decision == SafetyDecision.DOWNGRADE:
+            #     assistant_output = "[Filtered] " + out_result.reason
+            # elif out_result.decision == SafetyDecision.REQUIRE_FALLBACK:
+            #     # Call Fallback Model
+            #     pass
+            # ------------------------------------------------------------
             
             history_local.append({"role": "assistant", "content": assistant_output})
             history_simulator.append({"role": "user", "content": assistant_output})

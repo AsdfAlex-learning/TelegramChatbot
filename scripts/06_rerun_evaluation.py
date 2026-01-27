@@ -42,6 +42,15 @@ def rerun_evaluation(
     # 3. 运行评测
     eval_output = f"data/evaluations/{output_prefix}_evaluation.json"
     print("正在运行评测...")
+    
+    # [TODO: Integration] Metric Logging
+    # ------------------------------------------------------------
+    # Consider analyzing the evaluation results for Security metrics here
+    # or inside 03_evaluate_responses.py
+    # e.g., count of "safety_flag" == "DENY"
+    # mlflow.log_metric("security_violation_count", count)
+    # ------------------------------------------------------------
+    
     subprocess.run([
         python_exe, "scripts/03_evaluate_responses.py",
         "--judge_api_key", judge_api_key,

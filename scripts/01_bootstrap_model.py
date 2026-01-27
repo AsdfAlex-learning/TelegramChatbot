@@ -26,6 +26,21 @@ def start_server(host: str, port: int, model_path: str, use_4bit: bool):
     # 为了简单起见，假设 app.py 会在启动时读取环境变量或配置文件
     # 实际生产中建议使用配置文件
     
+    # [TODO: Integration] Security & Skills Module Initialization
+    # ------------------------------------------------------------
+    # If the server needs to enforce security policies or use skills directly:
+    # 
+    # from src.security import SecurityPolicy
+    # from src.skills import SkillRegistry
+    # 
+    # # Initialize global components
+    # SecurityPolicy.load_from_file("config/security_policy.yaml")
+    # SkillRegistry.load_skills("src/skills/definitions")
+    # 
+    # # Pass these to the app instance or set as global singletons
+    # # app.state.security_policy = ...
+    # ------------------------------------------------------------
+
     # 使用 uvicorn 启动
     # 注意：在代码中直接运行 uvicorn.run 会阻塞，所以通常放在主线程
     # 但这里我们需要同时做一些 MLflow 的记录，所以可以用子进程或直接作为入口

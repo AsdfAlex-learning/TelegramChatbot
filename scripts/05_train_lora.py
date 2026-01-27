@@ -37,6 +37,20 @@ if __name__ == "__main__":
         trainer = LLMTrainer(model_path=args.model_path, output_dir=args.output_dir)
         trainer.load_model_for_training(use_4bit=True)
         
+        # [TODO: Integration] Training with Security-Filtered Data
+        # ------------------------------------------------------------
+        # Ensure that the training data (args.data_path) has been processed
+        # by the security module (to remove unsafe content) and the skills module
+        # (to include high-quality skill execution traces).
+        #
+        # See scripts/04_prepare_sft_data.py for the data preparation logic.
+        #
+        # Future enhancement:
+        # Add a check here to verify data provenance or quality stats.
+        # if not verify_data_quality(args.data_path):
+        #     raise ValueError("Training data quality check failed")
+        # ------------------------------------------------------------
+
         print("开始训练...")
         trainer.train(
             train_file=args.data_path,

@@ -23,6 +23,25 @@ def prepare_sft_data(input_file: str, output_file: str, min_score: float = 4.0):
     
     for item in data:
         scores = item.get("scores", {})
+        
+        # [SAFETY] Future Filter
+        # 获取安全标记 (默认 unknown)，未来可在此处添加过滤逻辑
+        # 例如: if item.get("safety_flag") == "unsafe": continue
+        safety_flag = item.get("safety_flag", "unknown")
+        
+        # [TODO: Integration] Advanced Filtering based on Skills & Security
+        # ------------------------------------------------------------
+        # 1. Filter Unsafe Content
+        # if safety_flag in ["DENY", "unsafe"]:
+        #     continue
+        #
+        # 2. Prefer Skill-Generated Content
+        # if item.get("source") == "skill":
+        #     # Skill outputs are deterministic and high-quality, always include them
+        #     # regardless of judge score (or with lower threshold)
+        #     pass
+        # ------------------------------------------------------------
+        
         # 简单策略：准确性和有用性都大于阈值
         if scores.get("accuracy", 0) >= min_score and scores.get("helpfulness", 0) >= min_score:
             # 构造 Instruction Tuning 格式
