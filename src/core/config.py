@@ -38,6 +38,7 @@ class ProactiveConfig(BaseModel):
 class SystemConfig(BaseModel):
     telegram: TelegramConfig
     llm: LLMConfig
+    llm_server: LLMServerConfig = Field(default_factory=LLMServerConfig)
     bot: BotConfig = Field(default_factory=BotConfig)
     message_buffer: MessageBufferConfig = Field(default_factory=MessageBufferConfig)
     proactive: ProactiveConfig = Field(default_factory=ProactiveConfig)

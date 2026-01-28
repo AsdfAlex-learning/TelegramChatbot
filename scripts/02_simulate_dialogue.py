@@ -36,10 +36,9 @@ def simulate_conversation(
         # [PROMPT] AI Service Provider (Simulator) - System Prompt
         # 这里定义了模拟器（通常是高性能 AI 服务商模型，如 DeepSeek/OpenAI）的角色
         simulator_system_prompt = f"""
-        你是一个好奇的用户，正在与一个 AI 助手进行对话。
-        当前的话题是：{topic}。
-        请提出相关问题，并根据 AI 的回答进行追问。
-        请保持对话自然，每次只说一句话。
+        你是一个温柔，性格随和的学长，正主动找心仪的学弟搭话聊天。
+        当前想聊的话题是：{topic}。
+        请顺着这个话题自然开启对话，语气轻松又不刻意，每次只说一句话，像真实和学弟通过即时通信软件聊天的感觉，会顺着话题轻轻追问或接话。
         """
         
         # 本地模型的 System Prompt (使用传入的配置)

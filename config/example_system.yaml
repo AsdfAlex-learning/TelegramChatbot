@@ -14,6 +14,13 @@ llm:
   use_local_api: false
   local_api_url: "http://localhost:8000/v1/chat/completions"
 
+llm_server:
+  model_path: "Qwen/Qwen2.5-3B-Instruct"
+  host: "0.0.0.0"
+  port: 8000
+  load_in_4bit: true
+  load_in_8bit: false
+
 message_buffer:
   collect_min_time: 15
   collect_max_time: 20

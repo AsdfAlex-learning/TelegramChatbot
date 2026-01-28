@@ -1,10 +1,10 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-import os
 import logging
 from src.llm_system.server.routers import router
 from src.llm_system.engine.hf_runner import HFRunner
 from src.llm_system.monitor.mlflow_logger import MLflowLogger
+from src.core.config_loader import ConfigLoader
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -20,17 +20,19 @@ async def lifespan(app: FastAPI):
     mlflow_logger.initialize()
     
     # 初始化引擎
-    model_path = os.getenv("MODEL_PATH")
+    config = ConfigLoader().system_config.llm_server
+    model_path = config.model_path
+    
     if not model_path:
-        logger.warning("未设置 MODEL_PATH 环境变量。引擎将不会自动加载模型。")
+        logger.warning("未配置 model_path。引擎将不会自动加载模型。")
         app.state.engine = HFRunner()
     else:
         logger.info(f"正在从 {model_path} 加载模型...")
         engine = HFRunner()
         try:
-            # 检查环境变量中的量化标志
-            load_in_4bit = os.getenv("LOAD_IN_4BIT", "true").lower() == "true"
-            load_in_8bit = os.getenv("LOAD_IN_8BIT", "false").lower() == "true"
+            # 读取配置中的量化标志
+            load_in_4bit = config.load_in_4bit
+            load_in_8bit = config.load_in_8bit
             
             engine.load_model(model_path, load_in_4bit=load_in_4bit, load_in_8bit=load_in_8bit)
             app.state.engine = engine
@@ -59,6 +61,7 @@ def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", "8000"))
+    config = ConfigLoader().system_config.llm_server
+    host = config.host
+    port = config.port
     uvicorn.run(app, host=host, port=port)

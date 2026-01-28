@@ -1,4 +1,3 @@
-import os
 import sys
 import argparse
 import mlflow
@@ -13,19 +12,12 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from src.llm_system.monitor.mlflow_logger import MLflowLogger
 from src.llm_system.monitor.ui_launcher import launch_mlflow_ui
+from src.core.config_loader import ConfigLoader
 
-def start_server(host: str, port: int, model_path: str, use_4bit: bool):
+def start_server(config):
     """
     启动本地推理服务
     """
-    # 设置环境变量供 app.py 使用
-    os.environ["MODEL_PATH"] = model_path
-    os.environ["USE_4BIT"] = str(use_4bit)
-    
-    # 导入 app (注意：这里需要在环境变量设置之后导入，或者修改 app.py 读取配置的方式)
-    # 为了简单起见，假设 app.py 会在启动时读取环境变量或配置文件
-    # 实际生产中建议使用配置文件
-    
     # [TODO: Integration] Security & Skills Module Initialization
     # ------------------------------------------------------------
     # If the server needs to enforce security policies or use skills directly:
@@ -45,8 +37,8 @@ def start_server(host: str, port: int, model_path: str, use_4bit: bool):
     # 注意：在代码中直接运行 uvicorn.run 会阻塞，所以通常放在主线程
     # 但这里我们需要同时做一些 MLflow 的记录，所以可以用子进程或直接作为入口
     
-    print(f"正在启动推理服务... 模型: {model_path}")
-    uvicorn.run("src.llm_system.server.app:app", host=host, port=port, reload=False)
+    print(f"正在启动推理服务... 模型: {config.model_path}")
+    uvicorn.run("src.llm_system.server.app:app", host=config.host, port=config.port, reload=False)
 
 def check_server_health(url: str, max_retries: int = 30):
     """
@@ -66,16 +58,15 @@ def check_server_health(url: str, max_retries: int = 30):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="启动模型并记录 MLflow 实验")
-    parser.add_argument("--model_path", type=str, default="Qwen/Qwen2.5-3B-Instruct", help="模型路径或 HuggingFace ID")
-    parser.add_argument("--host", type=str, default="0.0.0.0", help="服务主机")
-    parser.add_argument("--port", type=int, default=8000, help="服务端口")
-    parser.add_argument("--use_4bit", action="store_true", default=True, help="使用 4-bit 量化")
     parser.add_argument("--experiment_name", type=str, default="LLM_Bootstrap", help="MLflow 实验名称")
     
     args = parser.parse_args()
 
     # 启动 MLflow UI
     launch_mlflow_ui()
+
+    # 加载配置
+    config = ConfigLoader().system_config.llm_server
 
     # 初始化 MLflow
     logger = MLflowLogger()
@@ -84,18 +75,17 @@ if __name__ == "__main__":
     with mlflow.start_run(run_name="bootstrap_model") as run:
         # 记录参数
         mlflow.log_params({
-            "model_path": args.model_path,
-            "use_4bit": args.use_4bit,
-            "host": args.host,
-            "port": args.port
+            "model_path": config.model_path,
+            "use_4bit": config.load_in_4bit,
+            "host": config.host,
+            "port": config.port
         })
         
         print(f"MLflow Run ID: {run.info.run_id}")
+        print(f"Configuration loaded from system.yaml: {config.model_path}")
         
         # 启动服务
-        # 实际操作中，这个脚本可能主要用于启动服务进程
-        # 这里直接运行 uvicorn
         try:
-            start_server(args.host, args.port, args.model_path, args.use_4bit)
+            start_server(config)
         except KeyboardInterrupt:
             print("服务已停止")
