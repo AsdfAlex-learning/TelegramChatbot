@@ -1,18 +1,18 @@
 import threading
 import time
 import requests
+import telebot
 from src.core.logger import get_logger
-from src.bot.telegram.client import tb_bot
 
 logger = get_logger("TelegramPolling")
 
-def start_telegram_polling():
+def start_telegram_polling(bot: telebot.TeleBot):
     logger.info("[TELEGRAM] 开始轮询")
     backoff = 1
     while True:
         try:
             # timeout=90, long_polling_timeout=60 为经验值
-            tb_bot.polling(none_stop=True, timeout=90, long_polling_timeout=60)
+            bot.polling(none_stop=True, timeout=90, long_polling_timeout=60)
             backoff = 1
         except requests.exceptions.ReadTimeout:
             continue
@@ -24,6 +24,6 @@ def start_telegram_polling():
         time.sleep(backoff)
         backoff = min(backoff * 2, 60)
 
-def start_polling_thread():
-    polling_thread = threading.Thread(target=start_telegram_polling, daemon=True)
+def start_polling_thread(bot: telebot.TeleBot):
+    polling_thread = threading.Thread(target=start_telegram_polling, args=(bot,), daemon=True)
     polling_thread.start()
