@@ -1,63 +1,131 @@
-from typing import List, Optional
+from typing import Optional, Dict, Any
 from dataclasses import dataclass
-from src.agent.state import PersonaState, EmotionType
+from enum import Enum
+from src.agent.state import PersonaState, EmotionType, RelationshipStage
+
+class MoodType(Enum):
+    NEUTRAL = "neutral"
+    SOFT = "soft"
+    DISTANT = "distant"
+    WARM = "warm"
+    PLAYFUL = "playful"
+
+class TextStrategy(Enum):
+    SHORT_REPLY = "short_reply"
+    LONG_REPLY = "long_reply"
+    SILENCE = "silence"
+    COMFORT = "comfort"
+
+class BodyAction(Enum):
+    IDLE = "idle"
+    NOD = "nod"
+    SHY = "shy"
+    TILT_HEAD = "tilt_head"
+    WAVE = "wave"
 
 @dataclass
 class ExpressionPlan:
     """
     表达计划
     决定了 Agent "想怎么回应"
+    对应输出: { "mood": "...", "text_strategy": "...", "body_action": "..." }
     """
+    mood: MoodType = MoodType.NEUTRAL
+    text_strategy: TextStrategy = TextStrategy.SHORT_REPLY
+    body_action: BodyAction = BodyAction.IDLE
+    
+    # 辅助字段
     should_reply: bool = True
-    delay_ms: int = 0  # 拟人化延迟
-    target_emotion: EmotionType = EmotionType.NEUTRAL
-    
-    # 表达策略开关
-    use_voice: bool = False
-    use_live2d: bool = True
-    tone_style: str = "normal"  # normal, soft, tsundere, etc.
-    
-    # 拒绝/冷处理策略
-    rejection_reason: Optional[str] = None
+    delay_ms: int = 500  # 拟人化延迟
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "mood": self.mood.value,
+            "text_strategy": self.text_strategy.value,
+            "body_action": self.body_action.value
+        }
 
 class EmpathyPlanner:
     """
     情境/情绪/表达策略决策器 (The Prefrontal Cortex)
     
-    它不负责生成具体的文本内容（那是 LLM 的工作），
-    它负责决定：
-    1. 这句话是否需要回应？
-    2. 用什么情绪回应？
-    3. 是否需要配合动作？
-    4. 现在的关系阶段允许什么样的互动？
+    职责：
+    1. 决定态度 (Mood)
+    2. 决定策略 (TextStrategy)
+    3. 决定动作 (BodyAction)
+    
+    原则：
+    - 不调用 LLM
+    - 不生成文本
+    - 纯规则驱动 (Rule-based)
     """
     
-    def __init__(self, persona_config: dict = None):
-        self.config = persona_config or {}
+    def __init__(self, config: dict = None):
+        self.config = config or {}
 
     def plan_response(self, user_input: str, current_state: PersonaState) -> ExpressionPlan:
         """
-        根据用户输入和当前状态，规划表达策略
+        从用户输入 + 当前状态中判断回应策略
         """
-        # TODO: 这里未来会接入更复杂的逻辑或轻量级模型判断
-        
+        # 1. 初始化默认计划
         plan = ExpressionPlan()
         
-        # 简单示例逻辑：
-        # 如果用户很长，我们可能需要更长的延迟来"阅读"
-        if len(user_input) > 20:
-            plan.delay_ms = 1500
-        else:
-            plan.delay_ms = 500
-            
-        # 传递当前情绪作为目标情绪（或者根据输入改变情绪）
-        plan.target_emotion = current_state.current_emotion
+        # 预处理输入
+        text_len = len(user_input)
+        keywords = self._extract_keywords(user_input)
         
+        # 2. 规则判断逻辑
+        
+        # 规则 A: 沉默/忽略策略
+        # 如果输入为空或者是一些无意义的符号，可能选择沉默
+        if text_len == 0:
+            plan.text_strategy = TextStrategy.SILENCE
+            plan.should_reply = False
+            return plan
+
+        # 规则 B: 关系阶段影响基调
+        if current_state.relationship_stage in [RelationshipStage.CLOSE_FRIEND, RelationshipStage.PARTNER]:
+            plan.mood = MoodType.WARM
+        elif current_state.relationship_stage == RelationshipStage.STRANGER:
+            plan.mood = MoodType.NEUTRAL
+
+        # 规则 C: 关键词触发情绪与动作
+        if any(w in user_input for w in ["喜欢", "爱", "cute", "love"]):
+            plan.mood = MoodType.SOFT
+            plan.body_action = BodyAction.SHY
+            plan.text_strategy = TextStrategy.SHORT_REPLY # 害羞时话少
+            
+        elif any(w in user_input for w in ["笨蛋", "傻", "讨厌"]):
+            plan.mood = MoodType.DISTANT
+            plan.body_action = BodyAction.TILT_HEAD
+            
+        elif any(w in user_input for w in ["救命", "难过", "哭", "help", "sad"]):
+            plan.mood = MoodType.SOFT
+            plan.text_strategy = TextStrategy.COMFORT
+            plan.body_action = BodyAction.NOD
+            
+        # 规则 D: 输入长度影响回复策略
+        elif text_len > 50:
+            # 用户说了很长一段话，我们需要倾听并给出较长回应
+            plan.text_strategy = TextStrategy.LONG_REPLY
+            plan.body_action = BodyAction.NOD
+            plan.delay_ms = 1500 # 读得慢一点
+            
+        elif text_len < 5:
+            # 用户只说了几个字，我们也简单回应
+            plan.text_strategy = TextStrategy.SHORT_REPLY
+            if plan.body_action == BodyAction.IDLE:
+                plan.body_action = BodyAction.NOD
+            plan.delay_ms = 500
+
+        # 规则 E: 状态修正
+        # 如果 Agent 处于特定情绪状态，会覆盖上述判断
+        if current_state.current_emotion == EmotionType.ANGRY:
+            plan.mood = MoodType.DISTANT
+            plan.text_strategy = TextStrategy.SHORT_REPLY
+            
         return plan
 
-    def should_reject(self, user_input: str, state: PersonaState) -> bool:
-        """
-        判断是否触犯了人格边界
-        """
-        # TODO: 实现安全/边界检查
-        return False
+    def _extract_keywords(self, text: str) -> list:
+        # 简单的关键词提取，未来可以换成更高级的
+        return text.lower().split()
