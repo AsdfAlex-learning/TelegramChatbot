@@ -5,8 +5,6 @@ from src.core.chat_service import ChatService
 from src.core.interaction import InteractionManager
 from src.core.proactive_service import ProactiveService
 from src.bot.proactive_messaging import ProactiveScheduler
-from src.core.component_system.base import ComponentContext
-from src.core.component_system.loader import ComponentLoader
 from src.core.logger import get_logger
 
 logger = get_logger("Wiring")
@@ -37,16 +35,6 @@ proactive_scheduler = ProactiveScheduler(
     chat_service=chat_service,
     sender=lambda uid, txt: safe_send_message(uid, txt)
 )
-
-# 4. 组件系统
-component_context = ComponentContext(
-    bot=tb_bot,
-    session_controller=session_controller,
-    chat_service=chat_service,
-    interaction_manager=interaction_manager
-)
-component_loader = ComponentLoader(component_context)
-component_loader.load_all_components()
 
 # 5. 初始化应用外观
 from src.bot.app import BotApplication
