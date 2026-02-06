@@ -7,9 +7,14 @@ from src.core.session_controller import SessionController
 from src.core.chat_service import ChatService
 from src.core.interaction import InteractionManager
 from src.core.proactive_service import ProactiveService
+from src.core.llm_client import LLMClient
 from src.bot.proactive_messaging import ProactiveScheduler
 from src.core.logger import get_logger
 from src.bot.app import BotApplication
+
+# Agent Components
+from src.agent.empathy_planner import EmpathyPlanner
+from src.agent.orchestrator import ExpressionOrchestrator
 
 logger = get_logger("Wiring")
 
@@ -48,12 +53,28 @@ def create_bot_context() -> BotContext:
         private_mode_default=system_config.bot.private_mode_default
     )
     
-    chat_service = ChatService(session_controller)
+    # Agent 组件初始化
+    llm_client = LLMClient(system_config)
+    empathy_planner = EmpathyPlanner()
+    orchestrator = ExpressionOrchestrator(empathy_planner, llm_client)
+    
+    chat_service = ChatService(session_controller, orchestrator)
     proactive_service = ProactiveService(session_controller, chat_service)
     
     # 4. 初始化交互与主动消息
     interaction_manager = InteractionManager(chat_service, session_controller)
     interaction_manager.set_sender(telegram_sender)
+    
+    # 动作播放适配器
+    def telegram_action_player(uid, action):
+        # 简单实现：将动作转换为斜体文字发送
+        # 实际项目中可能需要更复杂的表现（如表情包、贴纸等）
+        try:
+            bot.send_message(uid, f"_{action}_", parse_mode="Markdown")
+        except Exception as e:
+            logger.warning(f"动作播放失败: {e}")
+
+    interaction_manager.set_action_player(telegram_action_player)
     
     proactive_scheduler = ProactiveScheduler(
         proactive_service=proactive_service,

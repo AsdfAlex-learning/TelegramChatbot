@@ -1,33 +1,42 @@
 # Skills Module
 
-该模块提供了一组 **确定性、可控、可审计** 的能力单元 ("Skills")，用于处理高风险或需要标准输出的场景。
+This module provides **deterministic, controllable capability units** ("Skills") used by the `ExpressionOrchestrator` to generate specific parts of the agent's response.
 
-## 核心理念
-- **Skills ≠ Prompt 模板**: Skill 是包含业务逻辑的代码单元。
-- **确定性输出**: Skill 不依赖 LLM 的随机生成，而是返回结构化的数据。
-- **安全性**: Skill 不直接执行系统操作，只生成指导建议。
+## Core Concepts
+- **Atomic Capabilities**: Each skill handles a specific aspect of expression (Text strategy, Body movement, Voice tone).
+- **Configuration over Generation**: Skills often return configuration dictionaries (e.g., prompt instructions) rather than final text, allowing the Orchestrator/LLM to handle the final assembly.
 
-## 目录结构
-- `base.py`: Skill 抽象基类。
-- `registry.py`: Skill 注册中心，支持按名称或意图查找。
-- `router_helper.py`: 辅助 Router 进行意图匹配和分发。
-- `git_flow.py`: Git 工作流指导 Skill。
-- `docker_deploy.py`: Docker 部署清单 Skill。
-- `sql_security.py`: SQL 安全建议 Skill。
+## Directory Structure
 
-## 使用示例
+### 1. Text Skills (`src/skills/text/`)
+Define strategies for text generation. They return a dictionary containing `style_instruction`, `temperature`, `max_tokens`, etc.
+- `short_reply.py`: For brief, concise interactions.
+- `long_reply.py`: For deep, emotional, or detailed responses.
+- `comfort.py`: Specialized strategy for comforting users.
+
+### 2. Body Language Skills (`src/skills/body_language/`)
+Define physical actions or gestures. They return an action string (e.g., "nod_once", "tilt_head_left").
+- `idle.py`
+- `nod.py`
+- `shy.py`
+- `tilt_head.py`
+- `wave.py`
+
+### 3. Voice Skills (`src/skills/voice/`)
+Define vocal parameters (pitch, speed, tone).
+- `whisper.py`
+
+## Usage
+Skills are typically invoked by the `ExpressionOrchestrator` based on the `ExpressionPlan` from the `EmpathyPlanner`.
 
 ```python
-from src.skills import RouterHelper, SkillRegistry
+# Example: Using a Text Skill
+from src.skills.text.short_reply import short_reply_strategy
+config = short_reply_strategy(user_input)
+# config -> {'style_instruction': '...', 'temperature': 0.7}
 
-# 假设 Router 识别到了意图
-intent = "docker_deploy"
-context = {"language": "python", "is_production": True}
-
-# 匹配并执行
-skill_name = RouterHelper.match_intent(intent)
-if skill_name:
-    success, result = RouterHelper.dispatch(skill_name, context)
-    if success:
-        print(result["display_text"])
+# Example: Using a Body Skill
+from src.skills.body_language.nod import nod_action
+action = nod_action()
+# action -> "nod_once"
 ```

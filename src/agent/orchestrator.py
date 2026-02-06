@@ -4,6 +4,7 @@ import random
 
 from src.agent.state import PersonaState
 from src.agent.empathy_planner import EmpathyPlanner, ExpressionPlan, TextStrategy, BodyAction
+from src.core.llm_client import LLMClient
 
 # Text Skills
 from src.skills.text.short_reply import short_reply_strategy
@@ -46,16 +47,15 @@ class ExpressionOrchestrator:
     1. 接收 Planner 的 ExpressionPlan
     2. 调用 Text Skills 获取生成策略
     3. 调用 Body Skills 获取动作指令
-    4. (模拟) 生成最终文本
+    4. 调用 LLM 生成最终文本
     5. 组装成 AgentResponse
     """
     
-    def __init__(self, planner: EmpathyPlanner):
+    def __init__(self, planner: EmpathyPlanner, llm_client: LLMClient):
         self.planner = planner
-        # 未来这里会注入 LLM Client
-        # self.llm_client = ...
+        self.llm_client = llm_client
 
-    async def orchestrate_response(self, user_input: str, state: PersonaState) -> Optional[AgentResponse]:
+    def orchestrate_response(self, user_input: str, state: PersonaState, context_str: str = "", memory_str: str = "") -> Optional[AgentResponse]:
         """
         编排一次完整的响应
         """
@@ -72,8 +72,8 @@ class ExpressionOrchestrator:
         # 3. 执行 Text Skill (获取生成策略)
         text_config = self._execute_text_skill(plan.text_strategy, user_input)
         
-        # 4. 生成文本 (这里暂时使用 Mock 生成，未来连接 LLM)
-        generated_text = await self._mock_llm_generation(text_config, user_input)
+        # 4. 生成文本
+        generated_text = self._generate_text(text_config, user_input, context_str, memory_str)
         
         # 5. 组装最终响应
         response = AgentResponse(
@@ -85,6 +85,42 @@ class ExpressionOrchestrator:
         )
         
         return response
+
+    def _generate_text(self, text_config: Dict[str, Any], user_input: str, context_str: str, memory_str: str) -> str:
+        """调用 LLM 生成文本"""
+        
+        # 构建 System Prompt
+        style_instruction = text_config.get("style_instruction", "")
+        
+        # 简单的 Prompt 模板构建
+        # 注意：这里简化了 Prompt 构建过程，理想情况应该使用 PromptManager
+        system_prompt = f"""You are a helpful and empathetic AI assistant.
+Current Context:
+{context_str}
+
+User Memory:
+{memory_str}
+
+Instruction:
+{style_instruction}
+
+Please respond to the user's last message.
+"""
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_input}
+        ]
+        
+        try:
+            return self.llm_client.chat_completion(
+                messages=messages,
+                temperature=text_config.get("temperature", 0.7),
+                max_tokens=text_config.get("max_tokens", 150)
+            )
+        except Exception as e:
+            # Fallback
+            return "I'm sorry, I couldn't think of what to say."
 
     def _execute_body_skill(self, action_type: BodyAction) -> str:
         """根据动作类型调用对应的 Skill 函数"""
@@ -101,41 +137,13 @@ class ExpressionOrchestrator:
         else:
             return idle_action()
 
-    def _execute_text_skill(self, strategy_type: TextStrategy, context: str) -> Dict[str, Any]:
-        """根据文本策略调用对应的 Skill 函数获取配置"""
-        if strategy_type == TextStrategy.SHORT_REPLY:
-            return short_reply_strategy(context)
-        elif strategy_type == TextStrategy.LONG_REPLY:
-            return long_emotional_reply_strategy(context)
-        elif strategy_type == TextStrategy.COMFORT:
-            return comfort_reply_strategy(context)
+    def _execute_text_skill(self, strategy: TextStrategy, user_input: str) -> Dict[str, Any]:
+        """根据文本策略调用对应的 Skill 函数"""
+        if strategy == TextStrategy.SHORT_REPLY:
+            return short_reply_strategy(user_input)
+        elif strategy == TextStrategy.LONG_REPLY:
+            return long_emotional_reply_strategy(user_input)
+        elif strategy == TextStrategy.COMFORT:
+            return comfort_reply_strategy(user_input)
         else:
-            return short_reply_strategy(context)
-
-    async def _mock_llm_generation(self, config: Dict[str, Any], context: str) -> str:
-        """
-        模拟 LLM 生成过程
-        实际项目中这里会调用 self.llm_client.chat_completion(...)
-        """
-        style = config.get("style_instruction", "")
-        max_tokens = config.get("max_tokens", 50)
-        
-        # 简单的 Mock 逻辑
-        if "brief" in style:
-            candidates = ["嗯嗯，知道了。", "好的哦。", "收到！", "确实是这样呢。"]
-        elif "emotional" in style:
-            candidates = [
-                "听你这么说，我感觉也能理解你的心情... 这种事情确实让人很在意呢。",
-                "真的吗？我也好想知道更多细节呀，快跟我说说！",
-                "其实我也一直这么觉得，这种感觉很奇妙对吧？"
-            ]
-        elif "comfort" in style:
-            candidates = [
-                "别难过啦，我会一直陪着你的。",
-                "抱抱你... 一切都会好起来的。",
-                "如果不开心的话，随时都可以和我说哦。"
-            ]
-        else:
-            candidates = ["(Agent 正在思考...)"]
-            
-        return random.choice(candidates)
+            return short_reply_strategy(user_input)

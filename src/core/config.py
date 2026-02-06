@@ -29,6 +29,12 @@ class MessageBufferConfig(BaseModel):
     collect_min_time: int = Field(default=15, description="最小收集时间 (秒)")
     collect_max_time: int = Field(default=20, description="最大收集时间 (秒)")
 
+class LLMServerConfig(BaseModel):
+    host: str = Field(default="0.0.0.0", description="Server Host")
+    port: int = Field(default=8000, description="Server Port")
+    model_name_or_path: str = Field(default="deepseek-ai/deepseek-llm-7b-chat", description="Model Path")
+    quantization: Optional[str] = Field(default="4bit", description="Quantization (4bit/8bit/none)")
+
 class ProactiveConfig(BaseModel):
     check_interval_min: int = Field(default=1800, description="检查间隔最小值 (秒)")
     check_interval_max: int = Field(default=7200, description="检查间隔最大值 (秒)")

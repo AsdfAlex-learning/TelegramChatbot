@@ -6,7 +6,7 @@
 
 import threading
 import time
-from typing import Dict, Tuple, Set, Optional, List
+from typing import Dict, Tuple, Set, Optional, List, Any
 
 from src.core.config_loader import ConfigLoader
 from src.core.context import ConversationContext
@@ -15,23 +15,29 @@ from src.core.memory.service import MemoryService
 from src.core.session_controller import SessionController
 from src.core.logger import get_logger
 
+# Agent Architecture
+from src.agent.orchestrator import ExpressionOrchestrator, AgentResponse
+from src.agent.state import PersonaState, RelationshipStage
+
 logger = get_logger("ChatService")
 
 class ChatService:
-    def __init__(self, session_controller: SessionController):
-        self._initialize(session_controller)
+    def __init__(self, session_controller: SessionController, orchestrator: ExpressionOrchestrator):
+        self._initialize(session_controller, orchestrator)
 
-    def _initialize(self, session_controller: SessionController):
+    def _initialize(self, session_controller: SessionController, orchestrator: ExpressionOrchestrator):
         self.config_loader = ConfigLoader()
         self.system_config = self.config_loader.system_config
         self.prompt_manager = self.config_loader.prompt_manager
         
         self.llm_client = LLMClient(self.system_config)
         self.session_controller = session_controller
+        self.orchestrator = orchestrator
         
         # 状态管理
         self.chat_contexts: Dict[int, ConversationContext] = {}
         self.user_memories: Dict[int, MemoryService] = {}
+        self.user_states: Dict[int, PersonaState] = {} # 新增: 用户人格状态
         self.user_prompt_cache: Dict[int, Tuple[str, float]] = {}
         self.user_message_counts: Dict[int, int] = {}
         
@@ -58,6 +64,8 @@ class ChatService:
                 del self.user_message_counts[user_id]
             if user_id in self.user_prompt_cache:
                 del self.user_prompt_cache[user_id]
+            if user_id in self.user_states:
+                del self.user_states[user_id]
         
         with self.context_lock:
             if user_id in self.chat_contexts:
@@ -71,6 +79,17 @@ class ChatService:
             if user_id not in self.chat_contexts:
                 self.chat_contexts[user_id] = ConversationContext()
             return self.chat_contexts[user_id]
+
+    def get_user_state(self, user_id: int) -> PersonaState:
+        """获取或创建用户的 PersonaState"""
+        with self.state_lock:
+            if user_id not in self.user_states:
+                # 默认状态
+                self.user_states[user_id] = PersonaState()
+                # 简单逻辑：如果是 Owner，直接设为 PARTNER
+                if user_id == self.session_controller.owner_id:
+                     self.user_states[user_id].relationship_stage = RelationshipStage.PARTNER
+            return self.user_states[user_id]
 
     def get_user_memory(self, user_id: int) -> MemoryService:
         """获取或创建用户的长期记忆实例。"""
@@ -91,15 +110,15 @@ class ChatService:
         ctx.add_message("assistant", message)
         logger.debug(f"[CONTEXT] ADD_BOT | user_id: {user_id} | len: {len(message)}")
 
-    def process_user_input(self, user_id: int, user_input: str) -> str:
+    def process_user_input(self, user_id: int, user_input: str) -> Any:
         """
         处理用户输入：
         1. 添加到上下文
-        2. 构建 Prompt (包含记忆)
-        3. 调用 LLM
+        2. 准备上下文和记忆字符串
+        3. 调用 Orchestrator 获取响应 (AgentResponse)
         4. 添加回复到上下文
-        5. 触发记忆提取（如需）
-        6. 返回回复
+        5. 触发记忆提取
+        6. 返回响应对象 (AgentResponse)
         """
         # 1. 添加到上下文
         self.add_user_message_to_context(user_id, user_input)
@@ -109,37 +128,42 @@ class ChatService:
         conversation_str = ctx.format(exclude_last_n=1)
         user_summary = self._get_user_prompt_summary(user_id)
         
+        # 获取用户状态
+        state = self.get_user_state(user_id)
+        
         # 记录上下文状态
-        logger.info(f"[CHAT] PROCESS | user_id: {user_id} | context_turns: {len(ctx.history)}")
+        logger.info(f"[CHAT] PROCESS | user_id: {user_id} | context_turns: {len(ctx.history)} | state: {state.relationship_stage.name}")
         
-        # 3. 构建 Prompt
-        final_prompt = self.prompt_manager.build_prompt(
-            user_message=user_input,
-            memory=user_summary,
-            conversation=conversation_str
-        )
-        
-        # 4. 调用 LLM
+        # 3. 调用 Orchestrator
         try:
             start_time = time.time()
-            response = self.llm_client.chat_completion(
-                messages=[{"role": "user", "content": final_prompt}]
-            )
-            duration = time.time() - start_time
-            logger.info(f"[LLM] SUCCESS | user_id: {user_id} | duration: {duration:.2f}s | response_len: {len(response)}")
-        except Exception as e:
-            logger.error(f"[LLM] FAILED | user_id: {user_id} | error: {e}")
-            # 这里可以添加回滚逻辑：如果 LLM 失败，是否应该移除最后一条用户消息？
-            # 目前策略：保留用户消息，但不添加 assistant 消息，用户可以重试
-            raise e
             
-        # 5. 添加回复到上下文
-        self.add_assistant_message_to_context(user_id, response)
-        
-        # 6. 更新记忆 (异步或同步？目前是同步)
-        self._update_memories(user_id, user_input, response)
-        
-        return response
+            # 使用新架构进行编排
+            response = self.orchestrator.orchestrate_response(
+                user_input=user_input,
+                state=state,
+                context_str=conversation_str,
+                memory_str=user_summary
+            )
+            
+            duration = time.time() - start_time
+            
+            if response:
+                logger.info(f"[ORCHESTRATOR] SUCCESS | user_id: {user_id} | duration: {duration:.2f}s | action: {response.action}")
+                # 4. 添加回复到上下文
+                self.add_assistant_message_to_context(user_id, response.text)
+                
+                # 5. 更新记忆
+                self._update_memories(user_id, user_input, response.text)
+                
+                return response
+            else:
+                logger.info(f"[ORCHESTRATOR] SILENCE | user_id: {user_id}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"[ORCHESTRATOR] FAILED | user_id: {user_id} | error: {e}", exc_info=True)
+            raise e
 
     def _get_user_prompt_summary(self, user_id: int) -> str:
         """

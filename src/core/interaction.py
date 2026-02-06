@@ -33,6 +33,9 @@ class InteractionManager:
         
         # 发送消息的回调函数 (user_id, text) -> None
         self.sender: Optional[Callable[[int, str], None]] = None
+        
+        # 播放动作的回调函数 (user_id, action_name) -> None
+        self.action_player: Optional[Callable[[int, str], None]] = None
 
     def set_sender(self, sender_func: Callable[[int, str], None]):
         """
@@ -40,6 +43,10 @@ class InteractionManager:
         sender_func 应该处理实际的 I/O (例如 Telegram send)。
         """
         self.sender = sender_func
+
+    def set_action_player(self, player_func: Callable[[int, str], None]):
+        """设置播放动作的回调函数"""
+        self.action_player = player_func
 
     def add_user_message(self, user_id: int, message_text: str):
         """
@@ -124,10 +131,24 @@ class InteractionManager:
         
         try:
             # 调用 ChatService
+            # 注意：response 可能是 str 或 AgentResponse 对象
             response = self.chat_service.process_user_input(user_id, full_text)
             
-            # 分割并发送
-            self._send_response_chunks(user_id, response)
+            # 处理复杂响应对象 (AgentResponse)
+            text_to_send = response
+            if hasattr(response, 'text'):
+                text_to_send = response.text
+                
+                # 如果有动作且设置了播放器，则执行动作
+                if hasattr(response, 'action') and response.action and self.action_player:
+                    try:
+                        self.action_player(user_id, response.action)
+                    except Exception as ae:
+                        logger.error(f"[INTERACTION] ACTION_FAIL | user_id: {user_id} | action: {response.action} | error: {ae}")
+
+            # 分割并发送文本
+            if text_to_send:
+                self._send_response_chunks(user_id, text_to_send)
             
         except Exception as e:
             logger.error(f"[INTERACTION] ERROR | user_id: {user_id} | error: {e}", exc_info=True)
