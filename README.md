@@ -10,6 +10,10 @@ A sophisticated Telegram Chatbot powered by **Nonebot** and LLMs (OpenAI-compati
 ## ✨ Key Features
 
 - **Kernel-Satellite Architecture**: Separation of core logic (`src/core`) from protocol adapters (`src/bot`), ensuring stability and scalability.
+- **Empathy Agent Core**:
+  - **EmpathyPlanner**: Rule-based decision engine for emotional state and reply strategies.
+  - **ExpressionOrchestrator**: Multi-modal response generation (Text, Action, Mood).
+  - **PersonaState**: Inner state tracking (Relationship Stage, Emotion).
 - **Human-like Interaction**:
   - **Rhythm Control**: `InteractionManager` buffers messages and simulates natural typing delays.
   - **Fragmented Speech**: Breaks long responses into natural segments.
@@ -52,8 +56,10 @@ docker run -d --name my-bot -p 8080:8080 -v $(pwd)/.env.prod:/app/.env.prod tele
 
 ```
 src/
+├── agent/          # Agent Core: Planner, Orchestrator, State, Skills
 ├── core/           # Kernel: Business logic, State, Config, Logging
 ├── bot/            # Satellite: Telegram Adapter, Handlers, Scheduling
+├── llm_system/     # LLM Training & Evaluation Pipeline
 ├── api/            # External Integrations (e.g., Weather)
 ├── storage/        # Data Persistence
 └── config/         # YAML Configurations

@@ -8,7 +8,6 @@ import os
 import yaml
 import logging
 from src.core.config import SystemConfig, AIRulesConfig, PersonaConfig, GlobalAPIConfig
-from src.core.prompt_manager import PromptManager
 
 class ConfigLoader:
     _instance = None
@@ -16,7 +15,6 @@ class ConfigLoader:
     _ai_rules_config: AIRulesConfig = None
     _persona_config: PersonaConfig = None
     _api_config: GlobalAPIConfig = None
-    _prompt_manager: PromptManager = None
     
     def __new__(cls):
         if cls._instance is None:
@@ -40,12 +38,7 @@ class ConfigLoader:
         persona_path = os.path.join(config_dir, "persona.yaml")
         self._persona_config = self._load_yaml(persona_path, PersonaConfig)
 
-        # 4. 初始化 PromptManager
-        template_path = os.path.join(config_dir, "prompt_template.txt")
-        # 暂时使用默认人设
-        self._prompt_manager = PromptManager(template_path, self._ai_rules_config, self._persona_config.default)
-
-        # 5. 加载 API 配置
+        # 4. 加载 API 配置
         api_config_path = os.path.join(config_dir, "api_config", "global_config.yaml")
         try:
             if os.path.exists(api_config_path):
@@ -78,8 +71,8 @@ class ConfigLoader:
         return self._persona_config
 
     @property
-    def prompt_manager(self) -> PromptManager:
-        return self._prompt_manager
+    def ai_rules_config(self) -> AIRulesConfig:
+        return self._ai_rules_config
 
     @property
     def api_config(self) -> GlobalAPIConfig:

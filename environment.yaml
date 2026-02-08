@@ -35,3 +35,7 @@ dependencies:
     - mmengine
     - mmcv>=2.0.0
     - protobuf
+
+    # Testing
+    - pytest
+    - pytest-asyncio

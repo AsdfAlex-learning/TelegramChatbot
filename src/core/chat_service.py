@@ -28,7 +28,6 @@ class ChatService:
     def _initialize(self, session_controller: SessionController, orchestrator: ExpressionOrchestrator):
         self.config_loader = ConfigLoader()
         self.system_config = self.config_loader.system_config
-        self.prompt_manager = self.config_loader.prompt_manager
         
         self.llm_client = LLMClient(self.system_config)
         self.session_controller = session_controller

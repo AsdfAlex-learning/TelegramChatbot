@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import telebot
 
 from src.core.config_loader import ConfigLoader
+from src.core.prompt.prompt_builder import PromptBuilder
 from src.core.session_controller import SessionController
 from src.core.chat_service import ChatService
 from src.core.interaction import InteractionManager
@@ -56,7 +57,8 @@ def create_bot_context() -> BotContext:
     # Agent 组件初始化
     llm_client = LLMClient(system_config)
     empathy_planner = EmpathyPlanner()
-    orchestrator = ExpressionOrchestrator(empathy_planner, llm_client)
+    prompt_builder = PromptBuilder(config_loader)
+    orchestrator = ExpressionOrchestrator(empathy_planner, llm_client, prompt_builder)
     
     chat_service = ChatService(session_controller, orchestrator)
     proactive_service = ProactiveService(session_controller, chat_service)

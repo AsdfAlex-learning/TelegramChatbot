@@ -10,6 +10,7 @@ from src.core.session_controller import SessionController
 from src.core.chat_service import ChatService
 from src.core.llm_client import LLMClient
 from src.core.config_loader import ConfigLoader
+from src.core.prompt.prompt_builder import PromptBuilder
 from src.core.logger import get_logger
 
 logger = get_logger("ProactiveService")
@@ -26,11 +27,11 @@ class ProactiveService:
         self.chat_service = chat_service
         self.config_loader = ConfigLoader()
         self.system_config = self.config_loader.system_config
+        self.prompt_builder = PromptBuilder(self.config_loader)
         
         # 我们使用独立的 LLMClient 或复用现有的。
         # 由于 LLMClient 是轻量级的，我们可以新建一个。
         self.llm_client = LLMClient(self.system_config)
-        self.prompt_manager = self.config_loader.prompt_manager
         
         # 策略配置 (目前硬编码，未来可移至 yaml)
         self.send_prob = 0.3
@@ -75,13 +76,11 @@ class ProactiveService:
                 "语气自然亲切，不要太生硬，一两句话即可。）"
             )
             
-            # 我们传递 "暂无" 作为对话历史，因为我们想开启一个新话题，
-            # 但也许应该传递最近的历史上下文？
-            # 原始逻辑传递 "暂无"。让我们保持 "新话题" 的逻辑。
-            final_prompt = self.prompt_manager.build_prompt(
-                user_message=instruction,
-                memory=memory_text,
-                conversation="暂无" 
+            # 使用 PromptBuilder 构建 Prompt
+            final_prompt = self.prompt_builder.build(
+                user_input=instruction, # 这里将指令作为 user_input 传入，因为主要是触发生成
+                memory_str=memory_text,
+                context_str="暂无" 
             )
             
             # 3. 调用 LLM

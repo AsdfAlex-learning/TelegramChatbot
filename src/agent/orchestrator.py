@@ -5,6 +5,7 @@ import random
 from src.agent.state import PersonaState
 from src.agent.empathy_planner import EmpathyPlanner, ExpressionPlan, TextStrategy, BodyAction
 from src.core.llm_client import LLMClient
+from src.core.prompt.prompt_builder import PromptBuilder
 
 # Text Skills
 from src.skills.text.short_reply import short_reply_strategy
@@ -51,9 +52,10 @@ class ExpressionOrchestrator:
     5. 组装成 AgentResponse
     """
     
-    def __init__(self, planner: EmpathyPlanner, llm_client: LLMClient):
+    def __init__(self, planner: EmpathyPlanner, llm_client: LLMClient, prompt_builder: PromptBuilder):
         self.planner = planner
         self.llm_client = llm_client
+        self.prompt_builder = prompt_builder
 
     def orchestrate_response(self, user_input: str, state: PersonaState, context_str: str = "", memory_str: str = "") -> Optional[AgentResponse]:
         """
@@ -89,27 +91,20 @@ class ExpressionOrchestrator:
     def _generate_text(self, text_config: Dict[str, Any], user_input: str, context_str: str, memory_str: str) -> str:
         """调用 LLM 生成文本"""
         
-        # 构建 System Prompt
+        # 获取风格指令
         style_instruction = text_config.get("style_instruction", "")
         
-        # 简单的 Prompt 模板构建
-        # 注意：这里简化了 Prompt 构建过程，理想情况应该使用 PromptManager
-        system_prompt = f"""You are a helpful and empathetic AI assistant.
-Current Context:
-{context_str}
-
-User Memory:
-{memory_str}
-
-Instruction:
-{style_instruction}
-
-Please respond to the user's last message.
-"""
+        # 使用 PromptBuilder 构建 Prompt
+        # 这将自动包含 System Rules, Persona, Memory, Context
+        final_prompt = self.prompt_builder.build(
+            user_input=user_input,
+            context_str=context_str,
+            memory_str=memory_str,
+            instruction=style_instruction
+        )
         
         messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_input}
+            {"role": "user", "content": final_prompt}
         ]
         
         try:
