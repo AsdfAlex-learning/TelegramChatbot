@@ -1,0 +1,36 @@
+# Generated from environment.yaml
+# Recommended Python version: 3.12
+
+# Core Frameworks (PyTorch)
+# Note: On MacOS, this will typically install the version supporting MPS (Metal Performance Shaders)
+torch
+torchvision
+torchaudio
+
+# Telegram & HTTP
+pyTelegramBotAPI>=4.9.0
+requests>=2.28.0
+
+# Web Service & Monitor
+fastapi
+uvicorn
+mlflow
+
+# HuggingFace & LLM Toolchain
+transformers
+accelerate
+datasets
+peft
+bitsandbytes
+sentencepiece
+safetensors
+
+# OpenCompass Evaluation
+opencompass
+mmengine
+mmcv>=2.0.0
+protobuf
+
+# Testing
+pytest
+pytest-asyncio

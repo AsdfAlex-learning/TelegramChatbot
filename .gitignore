@@ -72,3 +72,6 @@ pip-wheel-metadata/
 .pdm-build/
 # poetry.lock 建议提交（锁定依赖版本），无需忽略
 # pdm.lock 建议提交，无需忽略
+
+.DS_Store 
+# MacOS 系统文件
