@@ -10,31 +10,34 @@ dependencies:
   - pytorch
   - torchvision
   - torchaudio
-  - pytorch-cuda=12.4  # 修正：推荐使用 12.4，配合 4060Ti 很稳定。13.x 目前 PyTorch 支持尚不完善。
+  # macOS/Linux compatible (cpu/mps/cuda handled by conda logic)
+  # - pytorch-cuda=12.4  <-- Removed to support cross-platform setup script
   - pip:
     # Telegram & HTTP
     - pyTelegramBotAPI>=4.9.0
     - requests>=2.28.0
 
-    # Web服务 & 监控
+    # Web Service & Monitor
     - fastapi
     - uvicorn
     - mlflow
+    - pydantic
+    - PyYAML
 
-    # HuggingFace & LLM 工具链
+    # HuggingFace & LLM Toolchain
     - transformers
     - accelerate
     - datasets
     - peft
-    - bitsandbytes    # 注意：Windows 下可能需要特定版本，如果安装失败请尝试 bitsandbytes-windows
+    - bitsandbytes
     - sentencepiece
     - safetensors
     
-    # OpenCompass 评测
+    # OpenCompass Evaluation
     - opencompass
     - mmengine
-    - mmcv>=2.0.0
     - protobuf
+    # - mmcv>=2.0.0  <-- Handled by setup script (mim install) to avoid build errors
 
     # Testing
     - pytest
