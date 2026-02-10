@@ -28,29 +28,53 @@ A sophisticated Telegram Chatbot powered by **Nonebot** and LLMs (OpenAI-compati
 
 ## 🚀 Quick Start
 
-### Using Docker (Recommended)
+### 1. Auto Setup (Recommended)
+We provide automated scripts to set up the environment (supports Conda and venv).
 
+#### macOS / Linux
+```bash
+# For Conda users
+./setup_env.sh
+
+# For venv (Standard Python) users
+./setup_venv.sh
+```
+
+#### Windows (PowerShell)
+```powershell
+# For Conda users
+.\setup_env.ps1
+
+# For venv (Standard Python) users
+.\setup_venv.ps1
+```
+
+### 2. Manual Setup
+If you prefer manual installation:
+
+```bash
+# Install core dependencies
+pip install -r requirements.txt
+
+# Install mmcv (Required for evaluation, using mim is recommended)
+pip install openmim
+mim install "mmcv>=2.0.0"
+```
+
+### 3. Run
+```bash
+# Ensure you have configured your keys in config/
+python run.py
+```
+
+### Using Docker
 ```bash
 # Build the image
 docker build -t telegram-chatbot .
 
 # Run (Mount your configuration file)
-# Ensure you have a valid .env.prod file
-docker run -d --name my-bot -p 8080:8080 -v $(pwd)/.env.prod:/app/.env.prod telegram-chatbot
+docker run -d --name my-bot -p 8080:8080 -v $(pwd)/config:/app/config telegram-chatbot
 ```
-
-### Local Development
-
-1. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. **Configure**:
-   Ensure you have a valid `.env.prod` file with your Telegram Token and LLM API keys.
-3. **Run**:
-   ```bash
-   python run.py
-   ```
 
 ## 📂 Project Structure
 
